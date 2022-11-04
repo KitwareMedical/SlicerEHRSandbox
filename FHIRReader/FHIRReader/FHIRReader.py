@@ -2,12 +2,13 @@ import logging
 import os
 
 import vtk
-
+import ctk
+import qt
 import slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
-pip_install(fhirclient)
+# pip_install(fhirclient)
 
 
 #
@@ -89,6 +90,27 @@ def registerSampleData():
         nodeNames='FHIRReader2'
     )
 
+class ClinicalParametersTabWidget(qt.QTabWidget):  # TODO move this class to an appropriate place
+    def __init__(self):
+        super().__init__()
+
+        self.patient_table_view = slicer.qMRMLTableView()
+        self.patient_table_view.setMRMLScene(slicer.mrmlScene)
+        # self.addTab(self.patient_table_view, "Patient data")
+        self.patient_table_node = None  # vtkMRMLTableNode
+
+    def set_table_node(self, table_node):
+        """Set the patient table view to show the given vtkMRMLTableNode."""
+        self.patient_table_view.setMRMLTableNode(table_node)
+        self.patient_table_view.setFirstRowLocked(True)  # Put the column names in the top header, rather than A,B,...
+
+    def set_patient_df(self, patient_df):
+        """Populate the patient table view with the contents of the given dataframe"""
+        if self.patient_table_node is not None:
+            slicer.mrmlScene.RemoveNode(self.patient_table_node)
+        self.patient_table_node = tableNodeFromDataFrame(patient_df, editable=False)
+        self.patient_table_node.SetName("ClinicalParamatersTabWidget_PatientTableNode")
+        self.set_table_node(self.patient_table_node)
 
 #
 # FHIRReaderWidget
@@ -130,6 +152,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # in batch mode, without a graphical user interface.
         self.logic = FHIRReaderLogic()
 
+        self.logic.setup(self.resourcePath('fhir-layout.xml'))
+
         # Connections
 
         # These connections ensure that we update parameter node when scene is closed
@@ -138,11 +162,12 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
         # (in the selected parameter node).
-        self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-        self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-        self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
-        self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
-        self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
+        self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
+        # self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
+        # self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
+        # self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
+        # self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
+        # self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
 
         # Buttons
         self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
@@ -195,10 +220,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        if not self._parameterNode.GetNodeReference("InputVolume"):
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if firstVolumeNode:
-                self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
+        # if not self._parameterNode.GetNodeReference("InputVolume"):
+        #     firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+        #     if firstVolumeNode:
+        #         self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
 
     def setParameterNode(self, inputParameterNode):
         """
@@ -234,19 +259,20 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = True
 
         # Update node selectors and sliders
-        self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
-        self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
-        self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
-        self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
-        self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
+        self.ui.FhirServerLineEdit.text = str(self._parameterNode.GetParameter("FHIRURL"))
+        # self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
+        # self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
+        # self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
+        # self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
+        # self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
 
         # Update buttons states and tooltips
-        if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
-            self.ui.applyButton.toolTip = "Compute output volume"
-            self.ui.applyButton.enabled = True
-        else:
-            self.ui.applyButton.toolTip = "Select input and output volume nodes"
-            self.ui.applyButton.enabled = False
+        # if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
+        #     self.ui.applyButton.toolTip = "Compute output volume"
+        self.ui.applyButton.enabled = True
+        # else:
+        #     self.ui.applyButton.toolTip = "Select input and output volume nodes"
+        #     self.ui.applyButton.enabled = False
 
         # All the GUI updates are done
         self._updatingGUIFromParameterNode = False
@@ -262,11 +288,12 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
 
-        self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
-        self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
-        self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
-        self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
-        self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
+        self._parameterNode.SetParameter("FHIRURL", self.ui.FhirServerLineEdit.text)
+        # self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
+        # self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
+        # self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
+        # self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
+        # self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
 
         self._parameterNode.EndModify(wasModified)
 
@@ -274,17 +301,19 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         Run processing when user clicks "Apply" button.
         """
-        with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
+        self.logic.process(self.ui.FhirServerLineEdit.text)
+        # self.ui.label.text = 'Cringe'
+        # with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
 
-            # Compute output
-            self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-                               self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
+        #     # Compute output
+        #     self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
+        #                        self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
 
-            # Compute inverted output (if needed)
-            if self.ui.invertedOutputSelector.currentNode():
-                # If additional output volume is selected then result with inverted threshold is written there
-                self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-                                   self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
+        #     # Compute inverted output (if needed)
+        #     if self.ui.invertedOutputSelector.currentNode():
+        #         # If additional output volume is selected then result with inverted threshold is written there
+        #         self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
+        #                            self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
 
 
 #
@@ -309,16 +338,55 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.patients = []
         self.observations = []
 
+        self.patient_browser_widget = None
+        self.patient_observations_widget = None
+
+    def setup(self, layout_file_path):
+        with open(layout_file_path) as fh:
+            layout_text = fh.read()
+
+        layoutID = 5001
+
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
+        # set the layout to be the current one
+        layoutManager.setLayout(layoutID)
+
+
+        self.patient_table_node = None
+
+
+        for i in range(layoutManager.plotViewCount):
+            plotWidget = layoutManager.plotWidget(i)
+            if plotWidget.name == 'qMRMLPlotWidgetPatientBrowser':
+                self.patient_browser_widget = plotWidget
+            elif plotWidget.name == 'qMRMLPlotWidgetPatientObservations':
+                self.patient_observations_widget = plotWidget
+
+        self.patient_browser_widget.layout().itemAt(1).widget().setParent(None)
+        self.patient_observations_widget.layout().itemAt(1).widget().setParent(None)
+
+
+        self.patient_table_view = slicer.qMRMLTableView()
+        self.patient_table_view.setMRMLScene(slicer.mrmlScene)
+
+        self.patient_browser_widget.layout().addWidget(self.patient_table_view)
+
+
+        self.observations_table_view = slicer.qMRMLTableView()
+        self.observations_table_view.setMRMLScene(slicer.mrmlScene)
+
+        self.patient_observations_widget.layout().addWidget(self.observations_table_view)
+
+        
+
     def setDefaultParameters(self, parameterNode):
         """
         Initialize parameter node with default settings.
         """
-        if not parameterNode.GetParameter("Threshold"):
-            parameterNode.SetParameter("Threshold", "100.0")
-        if not parameterNode.GetParameter("Invert"):
-            parameterNode.SetParameter("Invert", "false")
 
-    def process(self, inputVolume, outputVolume, imageThreshold, invert=False, showResult=False):
+    def process(self, fhir_url):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
@@ -329,25 +397,43 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         :param showResult: show output volume in slice viewers
         """
 
-        from fhirclient import client
-        settings = {
-            'app_id': 'my_web_app',
-            'api_base': 'http://localhost:2400/hapi-fhir-jpaserver/fhir/'
-        }
-        smart = client.FHIRClient(settings=settings)
+
+        patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+
+        array = vtk.vtkIntArray()
+        array.SetName('Col 1')
+
+        for i in range(10):
+            array.InsertNextValue(i)
+
+        patient_table_node.AddColumn(array)
+
+        patient_table_node.SetLocked(True);
+
+        patient_table_node.SetName("PatientBrowser_TableNode")
+        self.patient_table_view.setMRMLTableNode(patient_table_node)
+        self.patient_table_view.setFirstRowLocked(True) 
+        # from fhirclient import client
+        # settings = {
+        #     'app_id': 'my_web_app',
+        #     'api_base': fhir_url
+        # }
+        # smart = client.FHIRClient(settings=settings)
         
-        import fhirclient.models.patient as p
-        search = p.Patient.where(struct={})
-        self.patients = search.perform_resources(smart.server)
+        # import fhirclient.models.patient as p
+        # search = p.Patient.where(struct={})
+        # self.patients = search.perform_resources(smart.server)
 
-        print("Num of patients: {0}".format(len(self.patients)))
+        # print("Num of patients: {0}".format(len(self.patients)))
 
-        import fhirclient.models.observation as o
-        search = o.observation.where(struct={})
-        self.observations = search.perform_resources(smart.server)
+        # import fhirclient.models.observation as o
+        # search = o.Observation.where(struct={})
+        # self.observations = search.perform_resources(smart.server)
 
 
-        print("Num of observations: {0}".format(len(self.observations)))
+        # print("Num of observations: {0}".format(len(self.observations)))
+
+        
 
 
 #
