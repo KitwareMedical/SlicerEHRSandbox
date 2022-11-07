@@ -8,7 +8,9 @@ import slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
-# pip_install(fhirclient)
+from fhirclient import client
+import fhirclient.models.observation as o
+import fhirclient.models.patient as p
 
 
 #
@@ -163,6 +165,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
         # (in the selected parameter node).
         self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
+        self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
         # self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
         # self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
         # self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
@@ -302,6 +305,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         Run processing when user clicks "Apply" button.
         """
         self.logic.process(self.ui.FhirServerLineEdit.text)
+        self.loadPatients()
         # self.ui.label.text = 'Cringe'
         # with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
 
@@ -315,7 +319,20 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #         self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
         #                            self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
 
+    def loadPatients(self):
+        for idx, patient in enumerate(self.logic.patients):
+            item = qt.QListWidgetItem()
+            item.setData(21, idx)
+            if (patient.name is not None):
+                item.setText('{0}, {1}'.format(patient.name[0].family, patient.name[0].given[0]))
+            elif (patient.identifier is not None):
+                item.setText('Patient {0}'.format(patient.identifier[0].value))
+            else:
+                item.setText('Patient {0}'.format(patient.id))
+            self.ui.PatientListWidget.addItem(item)
 
+    def onPatientListWidgetDoubleClicked(self, item):
+        self.logic.loadPatientInfo(item.data(21))
 #
 # FHIRReaderLogic
 #
@@ -397,42 +414,75 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         :param showResult: show output volume in slice viewers
         """
 
+        # array = vtk.vtkIntArray()
+        # array.SetName('Col 1')
 
+        # for i in range(10):
+        #     array.InsertNextValue(i)
+
+        # patient_table_node.AddColumn(array)
+
+        # patient_table_node.SetLocked(True);
+
+        # patient_table_node.SetName("PatientBrowser_TableNode")
+        # self.patient_table_view.setMRMLTableNode(patient_table_node)
+        # self.patient_table_view.setFirstRowLocked(True) 
+        settings = {
+            'app_id': 'my_web_app',
+            'api_base': fhir_url
+        }
+        smart = client.FHIRClient(settings=settings)
+        
+        search = p.Patient.where(struct={})
+        self.patients = search.perform_resources(smart.server)
+
+        # self.loadPatients()
+
+        print("Num of patients: {0}".format(len(self.patients)))
+
+        search = o.Observation.where(struct={})
+        self.observations = search.perform_resources(smart.server)
+
+
+        print("Num of observations: {0}".format(len(self.observations)))
+
+    def loadPatientInfo(self, idx):
         patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
+        columns = {}
 
-        array = vtk.vtkIntArray()
-        array.SetName('Col 1')
+        for column_name in column_names:
+            array = vtk.vtkStringArray()
+            array.SetName(column_name)
+            array.Resize(len(self.patients))
+            columns[column_name] = array
 
-        for i in range(10):
-            array.InsertNextValue(i)
+        patient = self.patients[idx]
 
-        patient_table_node.AddColumn(array)
+        for column_name in column_names:
+            if (column_name == 'id'):
+                columns[column_name].InsertNextValue(patient.id)
+            elif (column_name == 'Gender'):
+                columns[column_name].InsertNextValue(patient.gender)
+            elif (column_name == 'First Name'):
+                columns[column_name].InsertNextValue(patient.name[0].given[0])
+            elif (column_name == 'Last Name'):
+                columns[column_name].InsertNextValue(patient.name[0].family)
+            elif (column_name == 'Date of Birth'):
+                columns[column_name].InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d'))
+            elif (column_name == 'Identifier System'):
+                columns[column_name].InsertNextValue(patient.identifier[0].system)
+            elif (column_name == 'Identifier Value'):
+                columns[column_name].InsertNextValue(patient.identifier[0].value)
+
+        for column in columns:
+            patient_table_node.AddColumn(columns[column])
 
         patient_table_node.SetLocked(True);
 
         patient_table_node.SetName("PatientBrowser_TableNode")
         self.patient_table_view.setMRMLTableNode(patient_table_node)
-        self.patient_table_view.setFirstRowLocked(True) 
-        # from fhirclient import client
-        # settings = {
-        #     'app_id': 'my_web_app',
-        #     'api_base': fhir_url
-        # }
-        # smart = client.FHIRClient(settings=settings)
-        
-        # import fhirclient.models.patient as p
-        # search = p.Patient.where(struct={})
-        # self.patients = search.perform_resources(smart.server)
-
-        # print("Num of patients: {0}".format(len(self.patients)))
-
-        # import fhirclient.models.observation as o
-        # search = o.Observation.where(struct={})
-        # self.observations = search.perform_resources(smart.server)
-
-
-        # print("Num of observations: {0}".format(len(self.observations)))
-
+        self.patient_table_view.setFirstRowLocked(True)
         
 
 
