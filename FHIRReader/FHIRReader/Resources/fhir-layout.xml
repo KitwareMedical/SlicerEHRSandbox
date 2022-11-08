@@ -1,7 +1,7 @@
 <layout type="horizontal" split="false">
   <item>
-    <view class="vtkMRMLPlotViewNode" singletontag="PatientBrowser">
-      <property name="viewlabel" action="default">Patient Browser</property>
+    <view class="vtkMRMLPlotViewNode" singletontag="PatientInformation">
+      <property name="viewlabel" action="default">Patient Information</property>
     </view>
   </item>
   <item>
