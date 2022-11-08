@@ -11,6 +11,7 @@ from slicer.util import VTKObservationMixin
 from fhirclient import client
 import fhirclient.models.observation as o
 import fhirclient.models.patient as p
+import fhirclient.models.bundle as b
 
 
 #
@@ -166,6 +167,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # (in the selected parameter node).
         self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
         self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
+        self.ui.ObservationListWidget.itemDoubleClicked.connect(self.onObservationListWidgetDoubleClicked)
         # self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
         # self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
         # self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
@@ -320,6 +322,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #                            self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
 
     def loadPatients(self):
+        self.ui.PatientListWidget.clear()
         for idx, patient in enumerate(self.logic.patients):
             item = qt.QListWidgetItem()
             item.setData(21, idx)
@@ -333,6 +336,24 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onPatientListWidgetDoubleClicked(self, item):
         self.logic.loadPatientInfo(item.data(21))
+        self.loadPatientObservations(item.data(21))
+
+    def loadPatientObservations(self, idx):
+        self.ui.ObservationListWidget.clear()
+        patient = self.logic.patients[idx]
+        self.logic.getObservations(patient)
+        for idx, observation in enumerate(self.logic.selectedObservations):
+            item = qt.QListWidgetItem()
+            item.setData(21, idx)
+            if (observation.identifier is not None):
+                item.setText('{0} {1}'.format(observation.code.coding[0].display, observation.identifier[0].value))
+            else:
+                item.setText('{0} {0}'.format(observation.code.coding[0].display, observation.id))
+            self.ui.ObservationListWidget.addItem(item)
+
+    def onObservationListWidgetDoubleClicked(self, item):
+        self.logic.loadObservationInfo(item.data(21))
+
 #
 # FHIRReaderLogic
 #
@@ -376,7 +397,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
 
         for i in range(layoutManager.plotViewCount):
             plotWidget = layoutManager.plotWidget(i)
-            if plotWidget.name == 'qMRMLPlotWidgetPatientBrowser':
+            if plotWidget.name == 'qMRMLPlotWidgetPatientInformation':
                 self.patient_browser_widget = plotWidget
             elif plotWidget.name == 'qMRMLPlotWidgetPatientObservations':
                 self.patient_observations_widget = plotWidget
@@ -431,58 +452,107 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             'app_id': 'my_web_app',
             'api_base': fhir_url
         }
-        smart = client.FHIRClient(settings=settings)
+        self.smart = client.FHIRClient(settings=settings)
         
-        search = p.Patient.where(struct={})
-        self.patients = search.perform_resources(smart.server)
+        search = p.Patient.where(struct={'_count': '40'})
+        self.performSearch(search)
+        # for link in search.perform(self.smart.server).link:
+        #     print(link.as_json())
+        self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)
 
-        # self.loadPatients()
 
         print("Num of patients: {0}".format(len(self.patients)))
 
-        search = o.Observation.where(struct={})
-        self.observations = search.perform_resources(smart.server)
+        
 
+    def performSearch(self, search):
+        bundle = search.perform(self.smart.server)
+        settings = {
+            'app_id': 'my_web_app',
+            'api_base': 'http://localhost:3000/hapi-fhir-jpaserver'
+        }
+        smart = client.FHIRClient(settings=settings)
+        resources = []
+        while(bundle.link[1].relation == 'next'):
+            if bundle is not None and bundle.entry is not None:
+                for entry in bundle.entry:
+                    resources.append(entry.resource)
+            res = smart.server.request_json(bundle.link[1].url.split('/')[-1])
+            bundle = b.Bundle(res)
 
-        print("Num of observations: {0}".format(len(self.observations)))
+        return resources
+
+    def getObservations(self, patient):
+        search = o.Observation.where(struct={'subject': str(patient.id)})
+        self.selectedObservations = self.performSearch(search)
+        print("Num of observations: {0}".format(len(self.selectedObservations)))
 
     def loadPatientInfo(self, idx):
         patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
         column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
-        columns = {}
+        
+        labelArray = vtk.vtkStringArray()
+        valueArray = vtk.vtkStringArray()
 
         for column_name in column_names:
-            array = vtk.vtkStringArray()
-            array.SetName(column_name)
-            array.Resize(len(self.patients))
-            columns[column_name] = array
+            labelArray.InsertNextValue(column_name)
+
+        patient_table_node.AddColumn(labelArray)
 
         patient = self.patients[idx]
 
-        for column_name in column_names:
-            if (column_name == 'id'):
-                columns[column_name].InsertNextValue(patient.id)
-            elif (column_name == 'Gender'):
-                columns[column_name].InsertNextValue(patient.gender)
-            elif (column_name == 'First Name'):
-                columns[column_name].InsertNextValue(patient.name[0].given[0])
-            elif (column_name == 'Last Name'):
-                columns[column_name].InsertNextValue(patient.name[0].family)
-            elif (column_name == 'Date of Birth'):
-                columns[column_name].InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d'))
-            elif (column_name == 'Identifier System'):
-                columns[column_name].InsertNextValue(patient.identifier[0].system)
-            elif (column_name == 'Identifier Value'):
-                columns[column_name].InsertNextValue(patient.identifier[0].value)
+        valueArray.InsertNextValue(patient.id)
+        valueArray.InsertNextValue(patient.gender)
+        valueArray.InsertNextValue(patient.name[0].given[0])
+        valueArray.InsertNextValue(patient.name[0].family)
+        valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d'))
+        valueArray.InsertNextValue(patient.identifier[0].system)
+        valueArray.InsertNextValue(patient.identifier[0].value)
 
-        for column in columns:
-            patient_table_node.AddColumn(columns[column])
+
+        patient_table_node.AddColumn(valueArray)
+
 
         patient_table_node.SetLocked(True);
 
-        patient_table_node.SetName("PatientBrowser_TableNode")
+        patient_table_node.SetName("PatientInfo_TableNode")
         self.patient_table_view.setMRMLTableNode(patient_table_node)
         self.patient_table_view.setFirstRowLocked(True)
+
+    def loadObservationInfo(self, idx):
+        observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        column_names = ['id', 'Value', 'Unit', 'Observation Type', 'UCUM Code', 'Code Value',
+            'Code System', 'Identifier System', 'Identifier Value']
+        
+        labelArray = vtk.vtkStringArray()
+        valueArray = vtk.vtkStringArray()
+
+        for column_name in column_names:
+            labelArray.InsertNextValue(column_name)
+
+        observation_table_node.AddColumn(labelArray)
+
+        observation = self.selectedObservations[idx]
+
+        valueArray.InsertNextValue(observation.id)
+        valueArray.InsertNextValue(str(observation.valueQuantity.value))
+        valueArray.InsertNextValue(observation.valueQuantity.unit)
+        valueArray.InsertNextValue(observation.code.coding[0].display)
+        valueArray.InsertNextValue(str(observation.valueQuantity.code))
+        valueArray.InsertNextValue(observation.code.coding[0].code)
+        valueArray.InsertNextValue(observation.code.coding[0].system)
+        valueArray.InsertNextValue(observation.identifier[0].system)
+        valueArray.InsertNextValue(observation.identifier[0].value)
+
+
+        observation_table_node.AddColumn(valueArray)
+
+
+        observation_table_node.SetLocked(True);
+
+        observation_table_node.SetName("ObservationInfo_TableNode")
+        self.observations_table_view.setMRMLTableNode(observation_table_node)
+        self.observations_table_view.setFirstRowLocked(True)
         
 
 
