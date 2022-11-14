@@ -484,6 +484,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
 
     def getObservations(self, patient):
         search = o.Observation.where(struct={'subject': str(patient.id), '_count': '200'})
+        self.selectedObservations = {}
         self.selectedObservations['all'] = self.performSearch(search)
         for observation in self.selectedObservations['all']:
             observationType = observation.code.coding[0].display
