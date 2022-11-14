@@ -342,13 +342,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.ObservationListWidget.clear()
         patient = self.logic.patients[idx]
         self.logic.getObservations(patient)
-        for idx, observation in enumerate(self.logic.selectedObservations):
+        for observationType in list(self.logic.selectedObservations.keys())[1:]:
             item = qt.QListWidgetItem()
-            item.setData(21, idx)
-            if (observation.identifier is not None):
-                item.setText('{0} {1}'.format(observation.code.coding[0].display, observation.identifier[0].value))
-            else:
-                item.setText('{0} {0}'.format(observation.code.coding[0].display, observation.id))
+            item.setData(21, observationType)
+            item.setText('{0}'.format(observationType))
             self.ui.ObservationListWidget.addItem(item)
 
     def onObservationListWidgetDoubleClicked(self, item):
@@ -374,7 +371,8 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         """
         ScriptedLoadableModuleLogic.__init__(self)
         self.patients = []
-        self.observations = []
+        self.selectedObservations = {}
+        self.fhirURL = ""
 
         self.patient_browser_widget = None
         self.patient_observations_widget = None
@@ -447,15 +445,15 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
 
         # patient_table_node.SetName("PatientBrowser_TableNode")
         # self.patient_table_view.setMRMLTableNode(patient_table_node)
-        # self.patient_table_view.setFirstRowLocked(True) 
+        # self.patient_table_view.setFirstRowLocked(True)
+        self.fhirURL = fhir_url 
         settings = {
             'app_id': 'my_web_app',
-            'api_base': fhir_url
+            'api_base': fhir_url + "fhir/"
         }
         self.smart = client.FHIRClient(settings=settings)
         
-        search = p.Patient.where(struct={'_count': '40'})
-        self.performSearch(search)
+        search = p.Patient.where(struct={'_count': '200'})
         # for link in search.perform(self.smart.server).link:
         #     print(link.as_json())
         self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)
@@ -469,23 +467,30 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         bundle = search.perform(self.smart.server)
         settings = {
             'app_id': 'my_web_app',
-            'api_base': 'http://localhost:3000/hapi-fhir-jpaserver'
+            'api_base': self.fhirURL
         }
         smart = client.FHIRClient(settings=settings)
         resources = []
-        while(bundle.link[1].relation == 'next'):
+        while(True):
             if bundle is not None and bundle.entry is not None:
                 for entry in bundle.entry:
                     resources.append(entry.resource)
+            if(len(bundle.link) <= 1 or bundle.link[1].relation != 'next'):
+                break
             res = smart.server.request_json(bundle.link[1].url.split('/')[-1])
             bundle = b.Bundle(res)
 
         return resources
 
     def getObservations(self, patient):
-        search = o.Observation.where(struct={'subject': str(patient.id)})
-        self.selectedObservations = self.performSearch(search)
-        print("Num of observations: {0}".format(len(self.selectedObservations)))
+        search = o.Observation.where(struct={'subject': str(patient.id), '_count': '200'})
+        self.selectedObservations['all'] = self.performSearch(search)
+        for observation in self.selectedObservations['all']:
+            observationType = observation.code.coding[0].display
+            if (observationType not in self.selectedObservations):
+                self.selectedObservations[observationType] = []
+            self.selectedObservations[observationType].append(observation)
+        print("Num of observations: {0}".format(len(self.selectedObservations['all'])))
 
     def loadPatientInfo(self, idx):
         patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
@@ -505,9 +510,9 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         valueArray.InsertNextValue(patient.gender)
         valueArray.InsertNextValue(patient.name[0].given[0])
         valueArray.InsertNextValue(patient.name[0].family)
-        valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d'))
-        valueArray.InsertNextValue(patient.identifier[0].system)
-        valueArray.InsertNextValue(patient.identifier[0].value)
+        valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
+        valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
+        valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
 
 
         patient_table_node.AddColumn(valueArray)
@@ -519,34 +524,38 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.patient_table_view.setMRMLTableNode(patient_table_node)
         self.patient_table_view.setFirstRowLocked(True)
 
-    def loadObservationInfo(self, idx):
+    def loadObservationInfo(self, observationType):
         observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
-        column_names = ['id', 'Value', 'Unit', 'Observation Type', 'UCUM Code', 'Code Value',
+        column_names = ['id', 'Value', 'Unit', 'Observation Type', 'Date','UCUM Code', 'Code Value',
             'Code System', 'Identifier System', 'Identifier Value']
-        
-        labelArray = vtk.vtkStringArray()
-        valueArray = vtk.vtkStringArray()
+    
 
         for column_name in column_names:
-            labelArray.InsertNextValue(column_name)
+            columnArray = vtk.vtkStringArray()
+            for observation in self.selectedObservations[observationType]:
+                if (column_name == 'id'):
+                    columnArray.InsertNextValue(observation.id)
+                elif (column_name == 'Value'):
+                    columnArray.InsertNextValue(str(observation.valueQuantity.value))
+                elif (column_name == 'Unit'):
+                    columnArray.InsertNextValue(observation.valueQuantity.unit)
+                elif (column_name == 'Observation Type'):
+                    columnArray.InsertNextValue(observation.code.coding[0].display)
+                elif (column_name == 'Date'):
+                    columnArray.InsertNextValue(observation.effectiveDateTime.date.strftime('%Y-%m-%d %H:%M:%S.%f')
+                            if observation.effectiveDateTime is not None else "")
+                elif (column_name == 'UCUM Code'):
+                    columnArray.InsertNextValue(str(observation.valueQuantity.code))
+                elif (column_name == 'Code Value'):
+                    columnArray.InsertNextValue(observation.code.coding[0].code)
+                elif (column_name == 'Code System'):
+                    columnArray.InsertNextValue(observation.code.coding[0].system)
+                elif (column_name == 'Identifier System'):
+                    columnArray.InsertNextValue(observation.identifier[0].system if observation.identifier is not None else "")
+                elif (column_name == 'Identifier Value'):
+                    columnArray.InsertNextValue(observation.identifier[0].value if observation.identifier is not None else "")
 
-        observation_table_node.AddColumn(labelArray)
-
-        observation = self.selectedObservations[idx]
-
-        valueArray.InsertNextValue(observation.id)
-        valueArray.InsertNextValue(str(observation.valueQuantity.value))
-        valueArray.InsertNextValue(observation.valueQuantity.unit)
-        valueArray.InsertNextValue(observation.code.coding[0].display)
-        valueArray.InsertNextValue(str(observation.valueQuantity.code))
-        valueArray.InsertNextValue(observation.code.coding[0].code)
-        valueArray.InsertNextValue(observation.code.coding[0].system)
-        valueArray.InsertNextValue(observation.identifier[0].system)
-        valueArray.InsertNextValue(observation.identifier[0].value)
-
-
-        observation_table_node.AddColumn(valueArray)
-
+            observation_table_node.AddColumn(columnArray)
 
         observation_table_node.SetLocked(True);
 
