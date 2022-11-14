@@ -433,25 +433,22 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         :param showResult: show output volume in slice viewers
         """
 
-        # array = vtk.vtkIntArray()
-        # array.SetName('Col 1')
-
-        # for i in range(10):
-        #     array.InsertNextValue(i)
-
-        # patient_table_node.AddColumn(array)
-
-        # patient_table_node.SetLocked(True);
-
-        # patient_table_node.SetName("PatientBrowser_TableNode")
-        # self.patient_table_view.setMRMLTableNode(patient_table_node)
-        # self.patient_table_view.setFirstRowLocked(True)
         self.fhirURL = fhir_url 
         settings = {
             'app_id': 'my_web_app',
-            'api_base': fhir_url + "fhir/"
+            'api_base': self.fhirURL + "fhir/"
         }
-        self.smart = client.FHIRClient(settings=settings)
+        try:
+            self.smart = client.FHIRClient(settings=settings)
+        except BaseException as e:
+            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
+            return
+
+        try:
+            self.smart.server.request_json('Patient')
+        except BaseException as e:
+            slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
+            return
         
         search = p.Patient.where(struct={'_count': '200'})
         # for link in search.perform(self.smart.server).link:
@@ -464,7 +461,11 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         
 
     def performSearch(self, search):
-        bundle = search.perform(self.smart.server)
+        try:
+            bundle = search.perform(self.smart.server)
+        except BaseException as e:
+            slicer.util.errorDisplay('Error occured while communicating with FHIR Server.', windowTitle='Error')
+            return []
         settings = {
             'app_id': 'my_web_app',
             'api_base': self.fhirURL
@@ -477,7 +478,11 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                     resources.append(entry.resource)
             if(len(bundle.link) <= 1 or bundle.link[1].relation != 'next'):
                 break
-            res = smart.server.request_json(bundle.link[1].url.split('/')[-1])
+            try:
+                res = smart.server.request_json(bundle.link[1].url.split('/')[-1])
+            except BaseException as e:
+                slicer.util.errorDisplay('Error occured while communicating with FHIR Server.', windowTitle='Error')
+                return []
             bundle = b.Bundle(res)
 
         return resources
