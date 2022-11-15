@@ -12,9 +12,9 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="ctkCollapsibleButton" name="inputsCollapsibleButton" native="true">
+    <widget class="ctkCollapsibleButton" name="connectionCollapsibleButton" native="true">
      <property name="text" stdset="0">
-      <string>Inputs</string>
+      <string>Connection Information</string>
      </property>
      <layout class="QFormLayout" name="formLayout_2">
       <item row="1" column="0">
@@ -31,7 +31,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QPushButton" name="applyButton">
+    <widget class="QPushButton" name="loadPatientsButton">
      <property name="enabled">
       <bool>false</bool>
      </property>
@@ -39,7 +39,7 @@
       <string>Run the algorithm.</string>
      </property>
      <property name="text">
-      <string>Apply</string>
+      <string>Load Patients</string>
      </property>
     </widget>
    </item>
