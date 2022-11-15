@@ -8,21 +8,27 @@ import slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
-from fhirclient import client
-import fhirclient.models.observation as o
-import fhirclient.models.patient as p
-import fhirclient.models.bundle as b
+from Utils import BusyCursor
+from Utils import DependencyInstaller
 
+allowLoading = True
 
-class BusyCursor:
-    """Context manager for showing a busy cursor. Ensures that cursor reverts to normal in case of an exception."""
-
-    def __enter__(self):
-        qt.QApplication.setOverrideCursor(qt.Qt.BusyCursor)
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        qt.QApplication.restoreOverrideCursor()
-        return False
+try:
+    from fhirclient import client
+    import fhirclient.models.observation as o
+    import fhirclient.models.patient as p
+    import fhirclient.models.bundle as b
+except Exception as e:
+    # We cannot use slicer.util.errorDisplay here because there is no main window (it will only log an error and not raise a popup).
+    qt.QMessageBox.critical(
+        slicer.util.mainWindow(), "Error importing fhirclient",
+        "Error importing fhirclient. " +
+        "If python dependencies are not installed, press the " +
+        "\"Check for fhirclient install\" button under the " + 
+        "Advanced tab. \n" +
+        "Details: " + str(e)
+    )
+    allowLoading = False 
 
 #
 # FHIRReader
@@ -103,28 +109,6 @@ def registerSampleData():
         nodeNames='FHIRReader2'
     )
 
-class ClinicalParametersTabWidget(qt.QTabWidget):  # TODO move this class to an appropriate place
-    def __init__(self):
-        super().__init__()
-
-        self.patient_table_view = slicer.qMRMLTableView()
-        self.patient_table_view.setMRMLScene(slicer.mrmlScene)
-        # self.addTab(self.patient_table_view, "Patient data")
-        self.patient_table_node = None  # vtkMRMLTableNode
-
-    def set_table_node(self, table_node):
-        """Set the patient table view to show the given vtkMRMLTableNode."""
-        self.patient_table_view.setMRMLTableNode(table_node)
-        self.patient_table_view.setFirstRowLocked(True)  # Put the column names in the top header, rather than A,B,...
-
-    def set_patient_df(self, patient_df):
-        """Populate the patient table view with the contents of the given dataframe"""
-        if self.patient_table_node is not None:
-            slicer.mrmlScene.RemoveNode(self.patient_table_node)
-        self.patient_table_node = tableNodeFromDataFrame(patient_df, editable=False)
-        self.patient_table_node.SetName("ClinicalParamatersTabWidget_PatientTableNode")
-        self.set_table_node(self.patient_table_node)
-
 #
 # FHIRReaderWidget
 #
@@ -172,6 +156,20 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # These connections ensure that we update parameter node when scene is closed
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
+
+        advancedCollapsible = ctk.ctkCollapsibleButton()
+        advancedCollapsible.text = "Advanced"
+        self.layout.addWidget(advancedCollapsible)
+        advancedLayout = qt.QFormLayout(advancedCollapsible)
+        advancedCollapsible.collapsed = True
+
+        def add_install_button(package_name: str, install_function: str):
+            installButton = qt.QPushButton(f"Check for {package_name} install")
+            installButton.clicked.connect(lambda unused_arg: install_function())
+            advancedLayout.addRow(installButton)
+
+
+        add_install_button("fhirclient", DependencyInstaller.check_and_install_fhirclient)
 
         # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
         # (in the selected parameter node).
@@ -265,7 +263,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Update node selectors and sliders
         self.ui.FhirServerLineEdit.text = str(self._parameterNode.GetParameter("FHIRURL"))
-        self.ui.loadPatientsButton.enabled = True
+        self.ui.loadPatientsButton.enabled = allowLoading
 
         # All the GUI updates are done
         self._updatingGUIFromParameterNode = False
@@ -289,7 +287,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         Run processing when user clicks "Load Patients" button.
         """
-        with BusyCursor():
+        with BusyCursor.BusyCursor():
             self.logic.process(self.ui.FhirServerLineEdit.text)
             self.loadPatients()
 
@@ -307,7 +305,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.PatientListWidget.addItem(item)
 
     def onPatientListWidgetDoubleClicked(self, item):
-        with BusyCursor():
+        with BusyCursor.BusyCursor():
             self.logic.loadPatientInfo(item.data(21))
             self.loadPatientObservations(item.data(21))
 
@@ -399,9 +397,9 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         Run the processing algorithm.
         Can be used without GUI widget.
         :param fhirUrl: fhir server to connect to
-        """
+        """            
 
-        self.fhirURL = fhirUrl 
+        self.fhirURL = fhirUrl
         settings = {
             'app_id': 'my_web_app',
             'api_base': self.fhirURL + "fhir/"
