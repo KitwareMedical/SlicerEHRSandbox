@@ -14,6 +14,16 @@ import fhirclient.models.patient as p
 import fhirclient.models.bundle as b
 
 
+class BusyCursor:
+    """Context manager for showing a busy cursor. Ensures that cursor reverts to normal in case of an exception."""
+
+    def __enter__(self):
+        qt.QApplication.setOverrideCursor(qt.Qt.BusyCursor)
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        qt.QApplication.restoreOverrideCursor()
+        return False
+
 #
 # FHIRReader
 #
@@ -168,14 +178,9 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
         self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
         self.ui.ObservationListWidget.itemDoubleClicked.connect(self.onObservationListWidgetDoubleClicked)
-        # self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-        # self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-        # self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
-        # self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
-        # self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
 
         # Buttons
-        self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
+        self.ui.loadPatientsButton.connect('clicked(bool)', self.onLoadPatientsButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -224,11 +229,6 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self.setParameterNode(self.logic.getParameterNode())
 
-        # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        # if not self._parameterNode.GetNodeReference("InputVolume"):
-        #     firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-        #     if firstVolumeNode:
-        #         self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
 
     def setParameterNode(self, inputParameterNode):
         """
@@ -265,19 +265,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Update node selectors and sliders
         self.ui.FhirServerLineEdit.text = str(self._parameterNode.GetParameter("FHIRURL"))
-        # self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
-        # self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
-        # self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
-        # self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
-        # self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
-
-        # Update buttons states and tooltips
-        # if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
-        #     self.ui.applyButton.toolTip = "Compute output volume"
-        self.ui.applyButton.enabled = True
-        # else:
-        #     self.ui.applyButton.toolTip = "Select input and output volume nodes"
-        #     self.ui.applyButton.enabled = False
+        self.ui.loadPatientsButton.enabled = True
 
         # All the GUI updates are done
         self._updatingGUIFromParameterNode = False
@@ -294,32 +282,16 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
 
         self._parameterNode.SetParameter("FHIRURL", self.ui.FhirServerLineEdit.text)
-        # self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
-        # self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
-        # self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
-        # self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
-        # self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
 
         self._parameterNode.EndModify(wasModified)
 
-    def onApplyButton(self):
+    def onLoadPatientsButton(self):
         """
-        Run processing when user clicks "Apply" button.
+        Run processing when user clicks "Load Patients" button.
         """
-        self.logic.process(self.ui.FhirServerLineEdit.text)
-        self.loadPatients()
-        # self.ui.label.text = 'Cringe'
-        # with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
-
-        #     # Compute output
-        #     self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-        #                        self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
-
-        #     # Compute inverted output (if needed)
-        #     if self.ui.invertedOutputSelector.currentNode():
-        #         # If additional output volume is selected then result with inverted threshold is written there
-        #         self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-        #                            self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
+        with BusyCursor():
+            self.logic.process(self.ui.FhirServerLineEdit.text)
+            self.loadPatients()
 
     def loadPatients(self):
         self.ui.PatientListWidget.clear()
@@ -335,8 +307,9 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.PatientListWidget.addItem(item)
 
     def onPatientListWidgetDoubleClicked(self, item):
-        self.logic.loadPatientInfo(item.data(21))
-        self.loadPatientObservations(item.data(21))
+        with BusyCursor():
+            self.logic.loadPatientInfo(item.data(21))
+            self.loadPatientObservations(item.data(21))
 
     def loadPatientObservations(self, idx):
         self.ui.ObservationListWidget.clear()
@@ -403,7 +376,6 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.patient_browser_widget.layout().itemAt(1).widget().setParent(None)
         self.patient_observations_widget.layout().itemAt(1).widget().setParent(None)
 
-
         self.patient_table_view = slicer.qMRMLTableView()
         self.patient_table_view.setMRMLScene(slicer.mrmlScene)
 
@@ -422,18 +394,14 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         Initialize parameter node with default settings.
         """
 
-    def process(self, fhir_url):
+    def process(self, fhirUrl):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
-        :param inputVolume: volume to be thresholded
-        :param outputVolume: thresholding result
-        :param imageThreshold: values above/below this threshold will be set to 0
-        :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-        :param showResult: show output volume in slice viewers
+        :param fhirUrl: fhir server to connect to
         """
 
-        self.fhirURL = fhir_url 
+        self.fhirURL = fhirUrl 
         settings = {
             'app_id': 'my_web_app',
             'api_base': self.fhirURL + "fhir/"
@@ -451,14 +419,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             return
         
         search = p.Patient.where(struct={'_count': '200'})
-        # for link in search.perform(self.smart.server).link:
-        #     print(link.as_json())
-        self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)
-
-
-        print("Num of patients: {0}".format(len(self.patients)))
-
-        
+        self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)        
 
     def performSearch(self, search):
         try:
@@ -496,7 +457,6 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             if (observationType not in self.selectedObservations):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)
-        print("Num of observations: {0}".format(len(self.selectedObservations['all'])))
 
     def loadPatientInfo(self, idx):
         patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
@@ -519,7 +479,6 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
         valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
         valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
-
 
         patient_table_node.AddColumn(valueArray)
 
@@ -606,35 +565,5 @@ class FHIRReaderTest(ScriptedLoadableModuleTest):
         """
 
         self.delayDisplay("Starting the test")
-
-        # # Get/create input data
-
-        # import SampleData
-        # registerSampleData()
-        # inputVolume = SampleData.downloadSample('FHIRReader1')
-        # self.delayDisplay('Loaded test data set')
-
-        # inputScalarRange = inputVolume.GetImageData().GetScalarRange()
-        # self.assertEqual(inputScalarRange[0], 0)
-        # self.assertEqual(inputScalarRange[1], 695)
-
-        # outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        # threshold = 100
-
-        # # Test the module logic
-
-        # logic = FHIRReaderLogic()
-
-        # # Test algorithm with non-inverted threshold
-        # logic.process(inputVolume, outputVolume, threshold, True)
-        # outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        # self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        # self.assertEqual(outputScalarRange[1], threshold)
-
-        # # Test algorithm with inverted threshold
-        # logic.process(inputVolume, outputVolume, threshold, False)
-        # outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        # self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        # self.assertEqual(outputScalarRange[1], inputScalarRange[1])
 
         self.delayDisplay('Test passed')
