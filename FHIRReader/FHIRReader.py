@@ -399,7 +399,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         :param fhirUrl: fhir server to connect to
         """            
 
-        self.fhirURL = fhirUrl
+        self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
         settings = {
             'app_id': 'my_web_app',
             'api_base': self.fhirURL + "fhir/"
