@@ -1,11 +1,11 @@
 <layout type="horizontal" split="false">
   <item>
-    <view class="vtkMRMLPlotViewNode" singletontag="PatientInformation">
+    <view class="vtkMRMLTableViewNode" singletontag="PatientInformation">
       <property name="viewlabel" action="default">Patient Information</property>
     </view>
   </item>
   <item>
-    <view class="vtkMRMLPlotViewNode" singletontag="PatientObservations">
+    <view class="vtkMRMLTableViewNode" singletontag="PatientObservations">
       <property name="viewlabel" action="default">Patient Observations</property>
     </view>
   </item>

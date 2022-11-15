@@ -345,8 +345,8 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.selectedObservations = {}
         self.fhirURL = ""
 
-        self.patient_browser_widget = None
-        self.patient_observations_widget = None
+        self.patient_table_view = None
+        self.observations_table_view = None
 
     def setup(self, layout_file_path):
         with open(layout_file_path) as fh:
@@ -360,30 +360,15 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         # set the layout to be the current one
         layoutManager.setLayout(layoutID)
 
-
-        self.patient_table_node = None
-
-
-        for i in range(layoutManager.plotViewCount):
-            plotWidget = layoutManager.plotWidget(i)
-            if plotWidget.name == 'qMRMLPlotWidgetPatientInformation':
-                self.patient_browser_widget = plotWidget
-            elif plotWidget.name == 'qMRMLPlotWidgetPatientObservations':
-                self.patient_observations_widget = plotWidget
-
-        self.patient_browser_widget.layout().itemAt(1).widget().setParent(None)
-        self.patient_observations_widget.layout().itemAt(1).widget().setParent(None)
-
-        self.patient_table_view = slicer.qMRMLTableView()
-        self.patient_table_view.setMRMLScene(slicer.mrmlScene)
-
-        self.patient_browser_widget.layout().addWidget(self.patient_table_view)
-
-
-        self.observations_table_view = slicer.qMRMLTableView()
-        self.observations_table_view.setMRMLScene(slicer.mrmlScene)
-
-        self.patient_observations_widget.layout().addWidget(self.observations_table_view)
+        for i in range(layoutManager.tableViewCount):
+            tableWidget = layoutManager.tableWidget(i)
+            tableController = tableWidget.tableController()
+            tableController.pinButton().hide()
+            
+            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                self.patient_table_view = tableWidget.tableView()
+            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                self.observations_table_view = tableWidget.tableView()
 
         
 
@@ -498,6 +483,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
 
         for column_name in column_names:
             columnArray = vtk.vtkStringArray()
+            columnArray.SetName(column_name)
             for observation in self.selectedObservations[observationType]:
                 if (column_name == 'id'):
                     columnArray.InsertNextValue(observation.id)
