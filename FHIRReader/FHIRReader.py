@@ -398,6 +398,9 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         Can be used without GUI widget.
         :param fhirUrl: fhir server to connect to
         """            
+        if (len(fhirUrl) == 0):
+            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
+            return
 
         self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
         settings = {
@@ -407,7 +410,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         try:
             self.smart = client.FHIRClient(settings=settings)
         except BaseException as e:
-            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
+            slicer.util.errorDisplay('Error intializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
             return
 
         try:
