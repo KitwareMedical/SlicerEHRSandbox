@@ -127,6 +127,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic = None
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
+        self.patient_table_view = None
+        self.observations_table_view = None
 
     def setup(self):
         """
@@ -195,27 +197,32 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.initializeParameterNode()
 
 
-        with open(self.resourcePath('fhir-layout.xml')) as fh:
-            layout_text = fh.read()
-
-        layoutID = 5001
-
         layoutManager = slicer.app.layoutManager()
-        layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
         self.oldLayout = layoutManager.layout
 
-        # set the layout to be the current one
-        layoutManager.setLayout(layoutID)
+        if (self.patient_table_view is None or self.observations_table_view is None):
+            print('here')
+            with open(self.resourcePath('fhir-layout.xml')) as fh:
+                layout_text = fh.read()
 
-        for i in range(layoutManager.tableViewCount):
-            tableWidget = layoutManager.tableWidget(i)
-            tableController = tableWidget.tableController()
-            tableController.pinButton().hide()
-            
-            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                self.patient_table_view = tableWidget.tableView()
-            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                self.observations_table_view = tableWidget.tableView()
+            layoutID = 5001
+
+            layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
+            # set the layout to be the current one
+            layoutManager.setLayout(layoutID)
+
+            for i in range(layoutManager.tableViewCount):
+                tableWidget = layoutManager.tableWidget(i)
+                tableController = tableWidget.tableController()
+                tableController.pinButton().hide()
+                
+                if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                    self.patient_table_view = tableWidget.tableView()
+                elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                    self.observations_table_view = tableWidget.tableView()
+        else:
+            layoutManager.setLayout(5001)
 
     def exit(self):
         """
@@ -331,7 +338,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onPatientListWidgetDoubleClicked(self, item):
         with BusyCursor.BusyCursor():
-            self.logic.loadPatientInfo(item.data(21))
+            self.loadPatientInfo(item.data(21))
             self.loadPatientObservations(item.data(21))
 
     def loadPatientObservations(self, idx):
@@ -345,8 +352,85 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.ObservationListWidget.addItem(item)
 
     def onObservationListWidgetDoubleClicked(self, item):
-        self.logic.loadObservationInfo(item.data(21))
+        observationType = item.data(21)
+        if (self.observations_table_view.mrmlTableNode() is not None):
+            observation_table_node = slicer.mrmlScene.GetFirstNodeByName('ObservationInfo_TableNode')
+            slicer.mrmlScene.RemoveNode(observation_table_node)
+            
+        observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        observation_table_node.SetName("ObservationInfo_TableNode")
+        self.observations_table_view.setMRMLTableNode(observation_table_node)
+        self.observations_table_view.setFirstRowLocked(True)
+        
 
+        column_names = ['id', 'Value', 'Unit', 'Observation Type', 'Date','UCUM Code', 'Code Value',
+            'Code System', 'Identifier System', 'Identifier Value']
+    
+
+        for column_name in column_names:
+            columnArray = vtk.vtkStringArray()
+            columnArray.SetName(column_name)
+            for observation in self.logic.selectedObservations[observationType]:
+                if (column_name == 'id'):
+                    columnArray.InsertNextValue(observation.id)
+                elif (column_name == 'Value'):
+                    columnArray.InsertNextValue(str(observation.valueQuantity.value))
+                elif (column_name == 'Unit'):
+                    columnArray.InsertNextValue(str(observation.valueQuantity.unit))
+                elif (column_name == 'Observation Type'):
+                    columnArray.InsertNextValue(observation.code.coding[0].display)
+                elif (column_name == 'Date'):
+                    columnArray.InsertNextValue(observation.effectiveDateTime.date.strftime('%Y-%m-%d %H:%M:%S.%f')
+                            if observation.effectiveDateTime is not None else "")
+                elif (column_name == 'UCUM Code'):
+                    columnArray.InsertNextValue(str(observation.valueQuantity.code))
+                elif (column_name == 'Code Value'):
+                    columnArray.InsertNextValue(observation.code.coding[0].code)
+                elif (column_name == 'Code System'):
+                    columnArray.InsertNextValue(observation.code.coding[0].system)
+                elif (column_name == 'Identifier System'):
+                    columnArray.InsertNextValue(observation.identifier[0].system if observation.identifier is not None else "")
+                elif (column_name == 'Identifier Value'):
+                    columnArray.InsertNextValue(observation.identifier[0].value if observation.identifier is not None else "")
+
+            observation_table_node.AddColumn(columnArray)
+
+        observation_table_node.SetLocked(True);
+
+    def loadPatientInfo(self, idx):
+        if (self.patient_table_view.mrmlTableNode() is not None):
+            patient_table_node = slicer.mrmlScene.GetFirstNodeByName('PatientInfo_TableNode')
+            slicer.mrmlScene.RemoveNode(patient_table_node)
+
+        patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        patient_table_node.SetName("PatientInfo_TableNode")
+        self.patient_table_view.setMRMLTableNode(patient_table_node)
+        self.patient_table_view.setFirstRowLocked(True)
+
+        column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
+        
+        labelArray = vtk.vtkStringArray()
+        valueArray = vtk.vtkStringArray()
+
+        for column_name in column_names:
+            labelArray.InsertNextValue(column_name)
+
+        patient_table_node.AddColumn(labelArray)
+
+        patient = self.logic.patients[idx]
+
+        valueArray.InsertNextValue(patient.id)
+        valueArray.InsertNextValue(patient.gender)
+        valueArray.InsertNextValue(patient.name[0].given[0])
+        valueArray.InsertNextValue(patient.name[0].family)
+        valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
+        valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
+        valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
+
+        patient_table_node.AddColumn(valueArray)
+
+        patient_table_node.SetLocked(True);
+        
 #
 # FHIRReaderLogic
 #
@@ -443,79 +527,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             observationType = observation.code.coding[0].display
             if (observationType not in self.selectedObservations):
                 self.selectedObservations[observationType] = []
-            self.selectedObservations[observationType].append(observation)
-
-    def loadPatientInfo(self, idx):
-        patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
-        column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
-        
-        labelArray = vtk.vtkStringArray()
-        valueArray = vtk.vtkStringArray()
-
-        for column_name in column_names:
-            labelArray.InsertNextValue(column_name)
-
-        patient_table_node.AddColumn(labelArray)
-
-        patient = self.patients[idx]
-
-        valueArray.InsertNextValue(patient.id)
-        valueArray.InsertNextValue(patient.gender)
-        valueArray.InsertNextValue(patient.name[0].given[0])
-        valueArray.InsertNextValue(patient.name[0].family)
-        valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
-
-        patient_table_node.AddColumn(valueArray)
-
-
-        patient_table_node.SetLocked(True);
-
-        patient_table_node.SetName("PatientInfo_TableNode")
-        self.patient_table_view.setMRMLTableNode(patient_table_node)
-        self.patient_table_view.setFirstRowLocked(True)
-
-    def loadObservationInfo(self, observationType):
-        observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
-        column_names = ['id', 'Value', 'Unit', 'Observation Type', 'Date','UCUM Code', 'Code Value',
-            'Code System', 'Identifier System', 'Identifier Value']
-    
-
-        for column_name in column_names:
-            columnArray = vtk.vtkStringArray()
-            columnArray.SetName(column_name)
-            for observation in self.selectedObservations[observationType]:
-                if (column_name == 'id'):
-                    columnArray.InsertNextValue(observation.id)
-                elif (column_name == 'Value'):
-                    columnArray.InsertNextValue(str(observation.valueQuantity.value))
-                elif (column_name == 'Unit'):
-                    columnArray.InsertNextValue(observation.valueQuantity.unit)
-                elif (column_name == 'Observation Type'):
-                    columnArray.InsertNextValue(observation.code.coding[0].display)
-                elif (column_name == 'Date'):
-                    columnArray.InsertNextValue(observation.effectiveDateTime.date.strftime('%Y-%m-%d %H:%M:%S.%f')
-                            if observation.effectiveDateTime is not None else "")
-                elif (column_name == 'UCUM Code'):
-                    columnArray.InsertNextValue(str(observation.valueQuantity.code))
-                elif (column_name == 'Code Value'):
-                    columnArray.InsertNextValue(observation.code.coding[0].code)
-                elif (column_name == 'Code System'):
-                    columnArray.InsertNextValue(observation.code.coding[0].system)
-                elif (column_name == 'Identifier System'):
-                    columnArray.InsertNextValue(observation.identifier[0].system if observation.identifier is not None else "")
-                elif (column_name == 'Identifier Value'):
-                    columnArray.InsertNextValue(observation.identifier[0].value if observation.identifier is not None else "")
-
-            observation_table_node.AddColumn(columnArray)
-
-        observation_table_node.SetLocked(True);
-
-        observation_table_node.SetName("ObservationInfo_TableNode")
-        self.observations_table_view.setMRMLTableNode(observation_table_node)
-        self.observations_table_view.setFirstRowLocked(True)
-        
+            self.selectedObservations[observationType].append(observation)       
 
 
 #
