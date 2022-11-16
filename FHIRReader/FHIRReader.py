@@ -149,8 +149,6 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # in batch mode, without a graphical user interface.
         self.logic = FHIRReaderLogic()
 
-        self.logic.setup(self.resourcePath('fhir-layout.xml'))
-
         # Connections
 
         # These connections ensure that we update parameter node when scene is closed
@@ -196,12 +194,39 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Make sure parameter node exists and observed
         self.initializeParameterNode()
 
+
+        with open(self.resourcePath('fhir-layout.xml')) as fh:
+            layout_text = fh.read()
+
+        layoutID = 5001
+
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+        self.oldLayout = layoutManager.layout
+
+        # set the layout to be the current one
+        layoutManager.setLayout(layoutID)
+
+        for i in range(layoutManager.tableViewCount):
+            tableWidget = layoutManager.tableWidget(i)
+            tableController = tableWidget.tableController()
+            tableController.pinButton().hide()
+            
+            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                self.patient_table_view = tableWidget.tableView()
+            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                self.observations_table_view = tableWidget.tableView()
+
     def exit(self):
         """
         Called each time the user opens a different module.
         """
         # Do not react to parameter node changes (GUI wlil be updated when the user enters into the module)
         self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self.updateGUIFromParameterNode)
+        layoutManager = slicer.app.layoutManager()
+
+        layoutManager.setLayout(self.oldLayout)
+
 
     def onSceneStartClose(self, caller, event):
         """
@@ -346,31 +371,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.fhirURL = ""
 
         self.patient_table_view = None
-        self.observations_table_view = None
-
-    def setup(self, layout_file_path):
-        with open(layout_file_path) as fh:
-            layout_text = fh.read()
-
-        layoutID = 5001
-
-        layoutManager = slicer.app.layoutManager()
-        layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
-
-        # set the layout to be the current one
-        layoutManager.setLayout(layoutID)
-
-        for i in range(layoutManager.tableViewCount):
-            tableWidget = layoutManager.tableWidget(i)
-            tableController = tableWidget.tableController()
-            tableController.pinButton().hide()
-            
-            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                self.patient_table_view = tableWidget.tableView()
-            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                self.observations_table_view = tableWidget.tableView()
-
-        
+        self.observations_table_view = None     
 
     def setDefaultParameters(self, parameterNode):
         """
