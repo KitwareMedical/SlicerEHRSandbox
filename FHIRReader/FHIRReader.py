@@ -183,6 +183,27 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
 
+        with open(self.resourcePath('fhir-layout.xml')) as fh:
+            layout_text = fh.read()
+
+        layoutID = 5001
+        
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
+        # set the layout to be the current one
+        layoutManager.setLayout(layoutID)
+
+        for i in range(layoutManager.tableViewCount):
+            tableWidget = layoutManager.tableWidget(i)
+            tableController = tableWidget.tableController()
+            tableController.pinButton().hide()
+            
+            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                self.patient_table_view = tableWidget.tableView()
+            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                self.observations_table_view = tableWidget.tableView()
+
     def cleanup(self):
         """
         Called when the application closes and the module widget is destroyed.
@@ -199,30 +220,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         self.oldLayout = layoutManager.layout
-
-        if (self.patient_table_view is None or self.observations_table_view is None):
-            print('here')
-            with open(self.resourcePath('fhir-layout.xml')) as fh:
-                layout_text = fh.read()
-
-            layoutID = 5001
-
-            layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
-
-            # set the layout to be the current one
-            layoutManager.setLayout(layoutID)
-
-            for i in range(layoutManager.tableViewCount):
-                tableWidget = layoutManager.tableWidget(i)
-                tableController = tableWidget.tableController()
-                tableController.pinButton().hide()
-                
-                if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                    self.patient_table_view = tableWidget.tableView()
-                elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                    self.observations_table_view = tableWidget.tableView()
-        else:
-            layoutManager.setLayout(5001)
+        layoutManager.setLayout(5001)
 
     def exit(self):
         """
