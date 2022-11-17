@@ -187,22 +187,9 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             layout_text = fh.read()
 
         layoutID = 5001
-        
+
         layoutManager = slicer.app.layoutManager()
         layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
-
-        # set the layout to be the current one
-        layoutManager.setLayout(layoutID)
-
-        for i in range(layoutManager.tableViewCount):
-            tableWidget = layoutManager.tableWidget(i)
-            tableController = tableWidget.tableController()
-            tableController.pinButton().hide()
-            
-            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                self.patient_table_view = tableWidget.tableView()
-            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                self.observations_table_view = tableWidget.tableView()
 
     def cleanup(self):
         """
@@ -220,7 +207,21 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         self.oldLayout = layoutManager.layout
+
+        # set the layout to be the current one
         layoutManager.setLayout(5001)
+
+        for i in range(layoutManager.tableViewCount):
+            tableWidget = layoutManager.tableWidget(i)
+            tableController = tableWidget.tableController()
+            tableController.pinButton().hide()
+            
+            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                self.patient_table_view = tableWidget.tableView()
+            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                self.observations_table_view = tableWidget.tableView()
+
+        
 
     def exit(self):
         """
