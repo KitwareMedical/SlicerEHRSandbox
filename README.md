@@ -1,4 +1,4 @@
-# fhir-slicer-extension
+# SlicerEHRSandbox
 
 *UNDER DEVELOPMENT*
 
