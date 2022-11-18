@@ -127,8 +127,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic = None
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
-        self.patient_table_view = None
-        self.observations_table_view = None
+        self.patient_table_node = None
+        self.observations_table_node = None
 
     def setup(self):
         """
@@ -183,6 +183,12 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
 
+        self.patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        self.patient_table_node.SetName("PatientInfo_TableNode")
+
+        self.observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        self.observation_table_node.SetName("ObservationInfo_TableNode")
+
         with open(self.resourcePath('fhir-layout.xml')) as fh:
             layout_text = fh.read()
 
@@ -190,6 +196,16 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
+        for i in range(layoutManager.tableViewCount):
+            tableWidget = layoutManager.tableWidget(i)
+            tableController = tableWidget.tableController()
+            tableController.pinButton().hide()
+            
+            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
+                tableWidget.tableView().setMRMLTableNode(self.patient_table_node)
+            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
+                tableWidget.tableView().setMRMLTableNode(self.observation_table_node)
 
     def cleanup(self):
         """
@@ -213,13 +229,11 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         for i in range(layoutManager.tableViewCount):
             tableWidget = layoutManager.tableWidget(i)
-            tableController = tableWidget.tableController()
-            tableController.pinButton().hide()
             
             if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                self.patient_table_view = tableWidget.tableView()
+                tableWidget.tableView().setMRMLTableNode(self.patient_table_node)
             elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                self.observations_table_view = tableWidget.tableView()
+                tableWidget.tableView().setMRMLTableNode(self.observation_table_node)
 
         
 
@@ -352,14 +366,15 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onObservationListWidgetDoubleClicked(self, item):
         observationType = item.data(21)
-        if (self.observations_table_view.mrmlTableNode() is not None):
-            observation_table_node = slicer.mrmlScene.GetFirstNodeByName('ObservationInfo_TableNode')
-            slicer.mrmlScene.RemoveNode(observation_table_node)
+        self.observation_table_node.RemoveAllColumns()
+        # if (self.observations_table_view.mrmlTableNode() is not None):
+        #     observation_table_node = slicer.mrmlScene.GetFirstNodeByName('ObservationInfo_TableNode')
+        #     slicer.mrmlScene.RemoveNode(observation_table_node)
             
-        observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
-        observation_table_node.SetName("ObservationInfo_TableNode")
-        self.observations_table_view.setMRMLTableNode(observation_table_node)
-        self.observations_table_view.setFirstRowLocked(True)
+        # observation_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        # observation_table_node.SetName("ObservationInfo_TableNode")
+        # self.observations_table_view.setMRMLTableNode(observation_table_node)
+        # self.observations_table_view.setFirstRowLocked(True)
         
 
         column_names = ['id', 'Value', 'Unit', 'Observation Type', 'Date','UCUM Code', 'Code Value',
@@ -392,19 +407,21 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 elif (column_name == 'Identifier Value'):
                     columnArray.InsertNextValue(observation.identifier[0].value if observation.identifier is not None else "")
 
-            observation_table_node.AddColumn(columnArray)
+            self.observation_table_node.AddColumn(columnArray)
 
-        observation_table_node.SetLocked(True);
+        # observation_table_node.SetLocked(True);
 
     def loadPatientInfo(self, idx):
-        if (self.patient_table_view.mrmlTableNode() is not None):
-            patient_table_node = slicer.mrmlScene.GetFirstNodeByName('PatientInfo_TableNode')
-            slicer.mrmlScene.RemoveNode(patient_table_node)
 
-        patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
-        patient_table_node.SetName("PatientInfo_TableNode")
-        self.patient_table_view.setMRMLTableNode(patient_table_node)
-        self.patient_table_view.setFirstRowLocked(True)
+        self.patient_table_node.RemoveAllColumns()
+        # if (self.patient_table_view.mrmlTableNode() is not None):
+        #     patient_table_node = slicer.mrmlScene.GetFirstNodeByName('PatientInfo_TableNode')
+        #     slicer.mrmlScene.RemoveNode(patient_table_node)
+
+        # patient_table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        # patient_table_node.SetName("PatientInfo_TableNode")
+        # self.patient_table_view.setMRMLTableNode(patient_table_node)
+        # self.patient_table_view.setFirstRowLocked(True)
 
         column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
         
@@ -414,7 +431,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         for column_name in column_names:
             labelArray.InsertNextValue(column_name)
 
-        patient_table_node.AddColumn(labelArray)
+        self.patient_table_node.AddColumn(labelArray)
 
         patient = self.logic.patients[idx]
 
@@ -426,9 +443,9 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
         valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
 
-        patient_table_node.AddColumn(valueArray)
+        self.patient_table_node.AddColumn(valueArray)
 
-        patient_table_node.SetLocked(True);
+        # patient_table_node.SetLocked(True);
         
 #
 # FHIRReaderLogic
