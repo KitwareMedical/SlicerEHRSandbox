@@ -335,6 +335,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def loadPatients(self):
         self.ui.PatientListWidget.clear()
+        self.ui.ObservationListWidget.clear()
         for idx, patient in enumerate(self.logic.patients):
             item = qt.QListWidgetItem()
             item.setData(21, idx)
@@ -348,6 +349,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onPatientListWidgetDoubleClicked(self, item):
         with BusyCursor.BusyCursor():
+            self.observation_table_node.RemoveAllColumns()
             self.loadPatientInfo(item.data(21))
             self.loadPatientObservations(item.data(21))
 
