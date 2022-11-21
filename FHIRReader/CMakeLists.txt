@@ -4,6 +4,8 @@ set(MODULE_NAME FHIRReader)
 #-----------------------------------------------------------------------------
 set(MODULE_PYTHON_SCRIPTS
   ${MODULE_NAME}.py
+  Utils/BusyCursor.py
+  Utils/DependencyInstaller.py
   )
 
 set(MODULE_PYTHON_RESOURCES
