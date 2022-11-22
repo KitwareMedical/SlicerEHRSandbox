@@ -7,7 +7,7 @@ project(SlicerEHRSandboc)
 set(EXTENSION_HOMEPAGE "https://www.slicer.org/wiki/Documentation/Nightly/Extensions/FHIRReader")
 set(EXTENSION_CATEGORY "Informatics")
 set(EXTENSION_CONTRIBUTORS "Stephen Crowell (Kitware), Ebrahim Ebrahim (Kitware), Andinet Enquobahrie (Kitware)")
-set(EXTENSION_DESCRIPTION "Read EHR data off a FHIR server. Currenlty reads Patient object and Observation Objects
+set(EXTENSION_DESCRIPTION "Read EHR data off a FHIR server. Currently reads Patient object and Observation Objects
 
 This work was supported by the National Institutes of Health under Award Number R42HL145669. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.")
 set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/FHIRReader.png")
