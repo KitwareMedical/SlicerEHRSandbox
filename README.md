@@ -18,11 +18,12 @@ Double clicking on a patient will display the information on the left table and 
 
 ## FHIR Server
 
-If you have data without a FHIR server, it is still possible to use the extension. Using (lungair-fhir-server)[https://github.com/KitwareMedical/lungair-fhir-server], it is possible to create a Docker container containing a FHIR server. Consult the README on how to convert your data into a FHIR server. Once the FHIR server has been created, you can use SlicerEHRSandbox as normal.
+If you have data without a FHIR server, it is still possible to use the extension. Using [lungair-fhir-server](https://github.com/KitwareMedical/lungair-fhir-server), it is possible to create a Docker container containing a FHIR server. Consult the README on how to convert your data into a FHIR server. Once the FHIR server has been created, you can use SlicerEHRSandbox as normal.
 
 
 ## License
 
 This software is licensed under the terms of the [Apache Licence Version 2.0](LICENSE).
 
-The license file was added at revision (1dea689)[https://github.com/stephencrowell/fhir-slicer-extension/commit/1dea6896a48818de5dd017c82a31c5320fa9ed29] on 2022-11-17, but you may consider that the license applies to all prior revisions as well.
+The license file was added at revision [1dea689](https://github.com/stephencrowell/fhir-slicer-extension/commit/1dea6896a48818de5dd017c82a31c5320fa9ed29) on 2022-11-17, but you may consider that the license applies to all prior revisions as well.
+
