@@ -64,6 +64,16 @@
     <widget class="QListWidget" name="ObservationListWidget"/>
    </item>
    <item>
+    <widget class="QLineEdit" name="DICOMLineEdit"/>
+   </item>
+   <item>
+    <widget class="QPushButton" name="loadDICOMButton">
+     <property name="text">
+      <string>Load DIcom</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="label_4">
      <property name="text">
       <string>Image Browser</string>

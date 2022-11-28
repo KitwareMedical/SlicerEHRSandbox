@@ -5,6 +5,7 @@ import vtk
 import ctk
 import qt
 import slicer
+import requests
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
@@ -176,11 +177,13 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
         # (in the selected parameter node).
         self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
+        self.ui.DICOMLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
         self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
         self.ui.ObservationListWidget.itemDoubleClicked.connect(self.onObservationListWidgetDoubleClicked)
 
         # Buttons
         self.ui.loadPatientsButton.connect('clicked(bool)', self.onLoadPatientsButton)
+        self.ui.loadDICOMButton.connect('clicked(bool)', self.onLoadDICOMButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -427,6 +430,18 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
 
         self.patient_table_node.AddColumn(valueArray)
+
+    def onLoadDICOMButton(self):
+        """
+        Run processing when user clicks "Load Patients" button.
+        """
+        params = {
+            'action': 'get',
+            # more key=value pairs as appeared in your query string
+        }
+        with BusyCursor.BusyCursor():
+            response = requests.get(url = 'http://localhost:2016/dicom/studies')
+        print(response.json())
         
 #
 # FHIRReaderLogic
