@@ -11,6 +11,7 @@ from slicer.util import VTKObservationMixin
 
 from Utils import BusyCursor
 from Utils import DependencyInstaller
+from dicomweb_client.api import DICOMwebClient
 
 allowLoading = True
 
@@ -335,7 +336,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         Run processing when user clicks "Load Patients" button.
         """
         with BusyCursor.BusyCursor():
-            self.logic.process(self.ui.FhirServerLineEdit.text)
+            self.logic.fetchPatients(self.ui.FhirServerLineEdit.text)
             self.loadPatients()
 
     def loadPatients(self):
@@ -435,13 +436,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         Run processing when user clicks "Load Patients" button.
         """
-        params = {
-            'action': 'get',
-            # more key=value pairs as appeared in your query string
-        }
-        with BusyCursor.BusyCursor():
-            response = requests.get(url = 'http://localhost:2016/dicom/studies')
-        print(response.json())
+
+        self.logic.fetchDICOM(self.ui.DICOMLineEdit.text)
         
 #
 # FHIRReaderLogic
@@ -465,6 +461,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.patients = []
         self.selectedObservations = {}
         self.fhirURL = ""
+        self.dicomURL = ""
 
         self.patient_table_view = None
         self.observations_table_view = None     
@@ -474,7 +471,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         Initialize parameter node with default settings.
         """
 
-    def process(self, fhirUrl):
+    def fetchPatients(self, fhirUrl):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
@@ -540,6 +537,14 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             if (observationType not in self.selectedObservations):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)       
+
+    def fetchDICOM(self, dicomUrl):
+        self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
+        client = DICOMwebClient(url=self.dicomURL)
+
+        with BusyCursor.BusyCursor():
+            response = client.search_for_studies(search_filters={'PatientID': 1})
+        print(len(response))
 
 
 #
