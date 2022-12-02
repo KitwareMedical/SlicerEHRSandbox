@@ -76,12 +76,18 @@
    <item>
     <widget class="QLabel" name="label_4">
      <property name="text">
-      <string>Image Browser</string>
+      <string>DICOM Browser</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QListWidget" name="ImageListWidget"/>
+    <widget class="QTreeWidget" name="DICOMTreeWidget">
+     <column>
+      <property name="text">
+       <string notr="true">1</string>
+      </property>
+     </column>
+    </widget>
    </item>
    <item>
     <spacer name="verticalSpacer">
