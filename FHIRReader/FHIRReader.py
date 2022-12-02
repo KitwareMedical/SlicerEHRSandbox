@@ -12,6 +12,7 @@ from slicer.util import VTKObservationMixin
 from Utils import BusyCursor
 from Utils import DependencyInstaller
 from dicomweb_client.api import DICOMwebClient
+import pydicom
 
 allowLoading = True
 
@@ -181,6 +182,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.DICOMLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
         self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
         self.ui.ObservationListWidget.itemDoubleClicked.connect(self.onObservationListWidgetDoubleClicked)
+        self.ui.DICOMTreeWidget.itemDoubleClicked.connect(self.onDICOMTreeWidgetDoubleClicked)
 
         # Buttons
         self.ui.loadPatientsButton.connect('clicked(bool)', self.onLoadPatientsButton)
@@ -438,6 +440,22 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
 
         self.logic.fetchDICOM(self.ui.DICOMLineEdit.text)
+        self.loadPatientDICOMs()
+
+    def loadPatientDICOMs(self):
+        for study in self.logic.selectedDICOM:
+            studyItem = qt.QTreeWidgetItem()
+            studyItem.setText(0, study['displayName'])
+            for serie in study['series']:
+                serieItem = qt.QTreeWidgetItem()
+                serieItem.setText(0, serie['displayName'])
+                serieItem.setData(0, 21, (study['id'], serie['id']))
+                studyItem.addChild(serieItem)
+            self.ui.DICOMTreeWidget.insertTopLevelItem(0, studyItem)
+
+    def onDICOMTreeWidgetDoubleClicked(self, item, col):
+        print(item.data(col, 21))
+
         
 #
 # FHIRReaderLogic
@@ -542,9 +560,48 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
         client = DICOMwebClient(url=self.dicomURL)
 
+        self.selectedDICOM = []
         with BusyCursor.BusyCursor():
-            response = client.search_for_studies(search_filters={'PatientID': 1})
-        print(len(response))
+            offset = 0
+            studies = []
+            while True:
+                subset = client.search_for_studies(search_filters={'PatientID': 1}, offset=offset)
+                if len(subset) == 0:
+                    break
+                if subset[0] in studies:
+                    # got the same study twice, so probably this server does not respect offset,
+                    # therefore we cannot do paging
+                    break
+                studies.extend(subset)
+                offset += len(subset)
+            for i, study in enumerate(studies):
+                studyDS = pydicom.dataset.Dataset.from_json(study)
+                studyInfo = {}
+                studyInfo['displayName'] = studyDS.StudyDescription if hasattr(studyDS, 'SeriesDescription') and studyDS.StudyDescription != "" else "Study {0}".format(i)
+                studyInfo['id'] = studyDS.StudyInstanceUID
+                series = []
+                offset = 0
+                while True:
+                    subset = client.search_for_series(studyDS.StudyInstanceUID, offset=offset)
+                    if len(subset) == 0:
+                        break
+                    if subset[0] in series:
+                        # got the same study twice, so probably this server does not respect offset,
+                        # therefore we cannot do paging
+                        break
+                    series.extend(subset)
+                    offset += len(subset)
+                seriesInfo = []
+                for j, serie in enumerate(series):
+                    serieDS = pydicom.dataset.Dataset.from_json(serie)
+                    serieInfo = {}
+                    serieInfo['displayName'] = serieDS.SeriesDescription if hasattr(serieDS, 'SeriesDescription') and serieDS.SeriesDescription != "" else "Series {0}".format(j)
+                    serieInfo['id'] = serieDS.SeriesInstanceUID
+                    seriesInfo.append(serieInfo)
+                studyInfo['series'] = seriesInfo
+                self.selectedDICOM.append(studyInfo)
+
+        
 
 
 #
