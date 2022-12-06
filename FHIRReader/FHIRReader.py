@@ -13,6 +13,7 @@ from Utils import BusyCursor
 from Utils import DependencyInstaller
 from dicomweb_client.api import DICOMwebClient
 import pydicom
+from DICOMLib import DICOMUtils
 
 allowLoading = True
 
@@ -132,6 +133,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = False
         self.patient_table_node = None
         self.observations_table_node = None
+        self.selected_dicom_node = None
+        self.loaded_dicom = {}
 
     def setup(self):
         """
@@ -204,6 +207,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
 
         for i in range(layoutManager.tableViewCount):
             tableWidget = layoutManager.tableWidget(i)
@@ -439,7 +443,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         Run processing when user clicks "Load Patients" button.
         """
 
-        self.logic.fetchDICOM(self.ui.DICOMLineEdit.text)
+        self.logic.fetchStudiesAndSeries(self.ui.DICOMLineEdit.text)
         self.loadPatientDICOMs()
 
     def loadPatientDICOMs(self):
@@ -454,7 +458,20 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.DICOMTreeWidget.insertTopLevelItem(0, studyItem)
 
     def onDICOMTreeWidgetDoubleClicked(self, item, col):
-        print(item.data(col, 21))
+        studyUID, serieUID = item.data(col, 21)
+        if (studyUID, serieUID) in self.loaded_dicom:
+            node = slicer.util.getNode(self.loaded_dicom[(studyUID, serieUID)])
+            slicer.util.setSliceViewerLayers(background = node)
+        else:
+            self.logic.fetchInstances(studyUID, serieUID)
+            with DICOMUtils.TemporaryDICOMDatabase() as db:
+                DICOMUtils.importDicom(os.getcwd()+'/test', db)
+                nodeID = DICOMUtils.loadSeriesByUID([serieUID,])[0]
+                self.loaded_dicom[(studyUID, serieUID)] = nodeID
+
+            for f in os.listdir(os.getcwd()+'/test'):
+                os.remove(os.path.join(os.getcwd()+'/test', f))
+            os.rmdir(os.getcwd()+'/test')
 
         
 #
@@ -556,7 +573,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)       
 
-    def fetchDICOM(self, dicomUrl):
+    def fetchStudiesAndSeries(self, dicomUrl):
         self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
         client = DICOMwebClient(url=self.dicomURL)
 
@@ -600,6 +617,30 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                     seriesInfo.append(serieInfo)
                 studyInfo['series'] = seriesInfo
                 self.selectedDICOM.append(studyInfo)
+
+    def fetchInstances(self, studyUID, seriesUID):
+        client = DICOMwebClient(url=self.dicomURL)
+        if not os.path.exists('test/'):
+            os.makedirs('test')
+        
+        with BusyCursor.BusyCursor():
+            instances = client.search_for_instances(study_instance_uid=studyUID, series_instance_uid=seriesUID)
+            retrievedInstances = []
+            print(os.getcwd())
+            for instanceIndex, instance in enumerate(instances):
+                instanceUID = instance['00080018']['Value'][0]
+                retrievedInstance = client.retrieve_instance(
+                    study_instance_uid=studyUID,
+                    series_instance_uid=seriesUID,
+                    sop_instance_uid=instanceUID)
+                pydicom.filewriter.write_file('test/file_'+str(instanceIndex)+'.dcm', retrievedInstance)
+                # retrievedInstances.append(retrievedInstance)
+
+        # print(len(retrievedInstances))
+
+
+
+
 
         
 
