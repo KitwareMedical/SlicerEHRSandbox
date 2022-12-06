@@ -1,12 +1,21 @@
-<layout type="horizontal" split="false">
+<layout type="vertical" split="false">
   <item>
-    <view class="vtkMRMLTableViewNode" singletontag="PatientInformation">
-      <property name="viewlabel" action="default">Patient Information</property>
+    <view class="vtkMRMLSliceNode" singletontag="SelectedDICOM">
+      <property name="viewlabel" action="default">Patient DICOM</property>
     </view>
   </item>
   <item>
-    <view class="vtkMRMLTableViewNode" singletontag="PatientObservations">
-      <property name="viewlabel" action="default">Patient Observations</property>
-    </view>
+    <layout type="horizontal" split="false">
+      <item>
+        <view class="vtkMRMLTableViewNode" singletontag="PatientInformation">
+          <property name="viewlabel" action="default">Patient Information</property>
+        </view>
+      </item>
+      <item>
+        <view class="vtkMRMLTableViewNode" singletontag="PatientObservations">
+          <property name="viewlabel" action="default">Patient Observations</property>
+        </view>
+      </item>
+    </layout>
   </item>
 </layout>
