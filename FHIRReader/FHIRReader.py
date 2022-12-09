@@ -133,7 +133,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = False
         self.patient_table_node = None
         self.observations_table_node = None
-        self.selected_dicom_node = None
+        self.loaded_id = ''
         self.loaded_dicom = {}
 
     def setup(self):
@@ -189,7 +189,6 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Buttons
         self.ui.loadPatientsButton.connect('clicked(bool)', self.onLoadPatientsButton)
-        self.ui.loadDICOMButton.connect('clicked(bool)', self.onLoadDICOMButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -348,9 +347,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def loadPatients(self):
         self.ui.PatientListWidget.clear()
         self.ui.ObservationListWidget.clear()
+        self.ui.DICOMTreeWidget.clear()
         for idx, patient in enumerate(self.logic.patients):
             item = qt.QListWidgetItem()
-            item.setData(21, idx)
+            item.setData(21, (idx, patient.identifier[0].value if patient.identifier is not None else None))
             if (patient.name is not None):
                 item.setText('{0}, {1}'.format(patient.name[0].family, patient.name[0].given[0]))
             elif (patient.identifier is not None):
@@ -362,8 +362,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onPatientListWidgetDoubleClicked(self, item):
         with BusyCursor.BusyCursor():
             self.observation_table_node.RemoveAllColumns()
-            self.loadPatientInfo(item.data(21))
-            self.loadPatientObservations(item.data(21))
+            self.loadPatientInfo(item.data(21)[0])
+            self.loadPatientObservations(item.data(21)[0])
+            self.loadPatientDICOMs(item.data(21)[1])
+            self.loaded_id = item.data(21)[1]
 
     def loadPatientObservations(self, idx):
         self.ui.ObservationListWidget.clear()
@@ -433,20 +435,20 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(patient.name[0].given[0])
         valueArray.InsertNextValue(patient.name[0].family)
         valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
+        valueArray.InsertNextValue(str(patient.identifier[0].system) if patient.identifier is not None  else "")
+        valueArray.InsertNextValue(str(patient.identifier[0].value) if patient.identifier is not None else "")
 
         self.patient_table_node.AddColumn(valueArray)
 
-    def onLoadDICOMButton(self):
-        """
-        Run processing when user clicks "Load Patients" button.
-        """
+    def loadPatientDICOMs(self, patientID):
+        self.ui.DICOMTreeWidget.clear()
+        if (len(self.loaded_id) and self.loaded_id != patientID):
+            shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+            toRemove = shNode.GetItemByUID(slicer.vtkMRMLSubjectHierarchyConstants.GetDICOMUIDName(), self.loaded_id)
+            shNode.RemoveItem(toRemove)
+            self.loaded_dicom = {}
 
-        self.logic.fetchStudiesAndSeries(self.ui.DICOMLineEdit.text)
-        self.loadPatientDICOMs()
-
-    def loadPatientDICOMs(self):
+        self.logic.fetchStudiesAndSeries(self.ui.DICOMLineEdit.text, patientID)
         for study in self.logic.selectedDICOM:
             studyItem = qt.QTreeWidgetItem()
             studyItem.setText(0, study['displayName'])
@@ -458,6 +460,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.DICOMTreeWidget.insertTopLevelItem(0, studyItem)
 
     def onDICOMTreeWidgetDoubleClicked(self, item, col):
+        if (item.data(col, 21) is None):
+            return
         studyUID, serieUID = item.data(col, 21)
         if (studyUID, serieUID) in self.loaded_dicom:
             node = slicer.util.getNode(self.loaded_dicom[(studyUID, serieUID)])
@@ -465,13 +469,13 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         else:
             self.logic.fetchInstances(studyUID, serieUID)
             with DICOMUtils.TemporaryDICOMDatabase() as db:
-                DICOMUtils.importDicom(os.getcwd()+'/test', db)
-                nodeID = DICOMUtils.loadSeriesByUID([serieUID,])[0]
+                DICOMUtils.importDicom(os.getcwd()+'/temp', db)
+                nodeID = DICOMUtils.loadSeriesByUID([serieUID])[0]
                 self.loaded_dicom[(studyUID, serieUID)] = nodeID
 
-            for f in os.listdir(os.getcwd()+'/test'):
-                os.remove(os.path.join(os.getcwd()+'/test', f))
-            os.rmdir(os.getcwd()+'/test')
+            for f in os.listdir(os.getcwd()+'/temp'):
+                os.remove(os.path.join(os.getcwd()+'/temp', f))
+            os.rmdir(os.getcwd()+'/temp')
 
         
 #
@@ -573,16 +577,18 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)       
 
-    def fetchStudiesAndSeries(self, dicomUrl):
+    def fetchStudiesAndSeries(self, dicomUrl, patientID):
         self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
         client = DICOMwebClient(url=self.dicomURL)
 
         self.selectedDICOM = []
+        if (patientID is None):
+            return
         with BusyCursor.BusyCursor():
             offset = 0
             studies = []
             while True:
-                subset = client.search_for_studies(search_filters={'PatientID': 1}, offset=offset)
+                subset = client.search_for_studies(search_filters={'PatientID': patientID}, offset=offset)
                 if len(subset) == 0:
                     break
                 if subset[0] in studies:
@@ -620,29 +626,18 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
 
     def fetchInstances(self, studyUID, seriesUID):
         client = DICOMwebClient(url=self.dicomURL)
-        if not os.path.exists('test/'):
-            os.makedirs('test')
+        if not os.path.exists('temp/'):
+            os.makedirs('temp')
         
         with BusyCursor.BusyCursor():
             instances = client.search_for_instances(study_instance_uid=studyUID, series_instance_uid=seriesUID)
-            retrievedInstances = []
-            print(os.getcwd())
             for instanceIndex, instance in enumerate(instances):
                 instanceUID = instance['00080018']['Value'][0]
                 retrievedInstance = client.retrieve_instance(
                     study_instance_uid=studyUID,
                     series_instance_uid=seriesUID,
                     sop_instance_uid=instanceUID)
-                pydicom.filewriter.write_file('test/file_'+str(instanceIndex)+'.dcm', retrievedInstance)
-                # retrievedInstances.append(retrievedInstance)
-
-        # print(len(retrievedInstances))
-
-
-
-
-
-        
+                pydicom.filewriter.write_file('temp/file_'+str(instanceIndex)+'.dcm', retrievedInstance)        
 
 
 #
