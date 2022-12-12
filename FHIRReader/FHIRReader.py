@@ -500,6 +500,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.selectedObservations = {}
         self.fhirURL = ""
         self.dicomURL = ""
+        self.selectedDICOM = []
 
         self.patient_table_view = None
         self.observations_table_view = None     
@@ -577,8 +578,15 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             self.selectedObservations[observationType].append(observation)       
 
     def fetchStudiesAndSeries(self, dicomUrl, patientID):
+        if (len(dicomUrl) == 0):
+            return
         self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
-        client = DICOMwebClient(url=self.dicomURL)
+        
+        try:
+            client = DICOMwebClient(url=self.dicomURL)
+        except BaseException as e: 
+            slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Unable to load DICOM studies', windowTitle='Error')
+            return
 
         self.selectedDICOM = []
         if (patientID is None):
