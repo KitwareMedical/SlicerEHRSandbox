@@ -5,7 +5,6 @@ import vtk
 import ctk
 import qt
 import slicer
-import requests
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
@@ -435,7 +434,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(patient.name[0].given[0])
         valueArray.InsertNextValue(patient.name[0].family)
         valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
-        valueArray.InsertNextValue(str(patient.identifier[0].system) if patient.identifier is not None  else "")
+        valueArray.InsertNextValue(str(patient.identifier[0].system) if patient.identifier is not None else "")
         valueArray.InsertNextValue(str(patient.identifier[0].value) if patient.identifier is not None else "")
 
         self.patient_table_node.AddColumn(valueArray)
