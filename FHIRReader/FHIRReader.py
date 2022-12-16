@@ -132,7 +132,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = False
         self.patient_table_node = None
         self.observations_table_node = None
-        self.loaded_id = ''
+        self.loaded_id = None
         self.loaded_dicom = {}
 
     def setup(self):
@@ -441,7 +441,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def loadPatientDICOMs(self, patientID):
         self.ui.DICOMTreeWidget.clear()
-        if (len(self.loaded_id) and self.loaded_id != patientID):
+        if (self.loaded_id is not None and self.loaded_id != patientID):
             shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
             toRemove = shNode.GetItemByUID(slicer.vtkMRMLSubjectHierarchyConstants.GetDICOMUIDName(), self.loaded_id)
             shNode.RemoveItem(toRemove)
