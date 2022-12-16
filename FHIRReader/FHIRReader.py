@@ -547,7 +547,6 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 fhirError = True
                 slicer.util.errorDisplay('Error intializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
 
-
             if (not fhirError):
                 try:
                     self.smart.server.request_json('Patient')
@@ -583,7 +582,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         try:
             bundle = search.perform(self.smart.server)
         except BaseException as e:
-            slicer.util.errorDisplay('Error occured while communicating with FHIR Server.', windowTitle='Error')
+            slicer.util.errorDisplay('Error occurred while communicating with FHIR Server.', windowTitle='Error')
             return []
         settings = {
             'app_id': 'my_web_app',
@@ -600,7 +599,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             try:
                 res = smart.server.request_json(bundle.link[1].url.split('/')[-1])
             except BaseException as e:
-                slicer.util.errorDisplay('Error occured while communicating with FHIR Server.', windowTitle='Error')
+                slicer.util.errorDisplay('Error occurred while communicating with FHIR Server.', windowTitle='Error')
                 return []
             bundle = b.Bundle(res)
 
