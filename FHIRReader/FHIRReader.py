@@ -340,7 +340,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         Run processing when user clicks "Load Patients" button.
         """
         with BusyCursor.BusyCursor():
-            self.logic.fetchPatients(self.ui.FhirServerLineEdit.text)
+            testResult = self.logic.testConnection(self.ui.FhirServerLineEdit.text, self.ui.DICOMLineEdit.text)
+            if (testResult):
+                return
+            self.logic.fetchPatients()
             self.loadPatients()
 
     def loadPatients(self):
@@ -447,7 +450,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             shNode.RemoveItem(toRemove)
             self.loaded_dicom = {}
 
-        self.logic.fetchStudiesAndSeries(self.ui.DICOMLineEdit.text, patientID)
+        self.logic.fetchStudiesAndSeries(patientID)
         for study in self.logic.selectedDICOM:
             studyItem = qt.QTreeWidgetItem()
             studyItem.setText(0, study['displayName'])
@@ -503,40 +506,61 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.selectedDICOM = []
 
         self.patient_table_view = None
-        self.observations_table_view = None     
+        self.observations_table_view = None 
+
+        self.fhirClient = None
+        self.dicomClient = None    
 
     def setDefaultParameters(self, parameterNode):
         """
         Initialize parameter node with default settings.
         """
 
-    def fetchPatients(self, fhirUrl):
+    def testConnection(self, fhirUrl, dicomUrl):
+        fhirError = False
+        dicomError = False
+
+        if (len(fhirUrl) == 0):
+            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
+        else:
+            self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
+            settings = {
+                'app_id': 'my_web_app',
+                'api_base': self.fhirURL + "fhir/"
+            }
+            try:
+                self.smart = client.FHIRClient(settings=settings)
+            except BaseException as e:
+                fhirError = True
+                slicer.util.errorDisplay('Error intializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
+
+
+            if (not fhirError):
+                try:
+                    self.smart.server.request_json('Patient')
+                except BaseException as e:
+                    fhirError = True
+                    slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
+
+        if (len(dicomUrl) != 0):
+            self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
+        
+            try:
+                self.dicomClient = DICOMwebClient(url=self.dicomURL)
+            except BaseException as e: 
+                slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Does te server exist at {0} ?'.format(self.dicomURL), windowTitle='Error')
+                dicomError = True
+
+        return dicomError or fhirError
+                
+
+
+    def fetchPatients(self):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
         :param fhirUrl: fhir server to connect to
-        """            
-        if (len(fhirUrl) == 0):
-            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
-            return
-
-        self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
-        settings = {
-            'app_id': 'my_web_app',
-            'api_base': self.fhirURL + "fhir/"
-        }
-        try:
-            self.smart = client.FHIRClient(settings=settings)
-        except BaseException as e:
-            slicer.util.errorDisplay('Error intializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
-            return
-
-        try:
-            self.smart.server.request_json('Patient')
-        except BaseException as e:
-            slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
-            return
-        
+        """        
         search = p.Patient.where(struct={'_count': '200'})
         self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)        
 
@@ -577,17 +601,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)       
 
-    def fetchStudiesAndSeries(self, dicomUrl, patientID):
-        if (len(dicomUrl) == 0):
-            return
-        self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
-        
-        try:
-            client = DICOMwebClient(url=self.dicomURL)
-        except BaseException as e: 
-            slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Unable to load DICOM studies', windowTitle='Error')
-            return
-
+    def fetchStudiesAndSeries(self, patientID):     
         self.selectedDICOM = []
         if (patientID is None):
             return
@@ -595,7 +609,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             offset = 0
             studies = []
             while True:
-                subset = client.search_for_studies(search_filters={'PatientID': patientID}, offset=offset)
+                subset = self.dicomClient.search_for_studies(search_filters={'PatientID': patientID}, offset=offset)
                 if len(subset) == 0:
                     break
                 if subset[0] in studies:
@@ -612,7 +626,7 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 series = []
                 offset = 0
                 while True:
-                    subset = client.search_for_series(studyDS.StudyInstanceUID, offset=offset)
+                    subset = self.dicomClient.search_for_series(studyDS.StudyInstanceUID, offset=offset)
                     if len(subset) == 0:
                         break
                     if subset[0] in series:
@@ -632,15 +646,14 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                 self.selectedDICOM.append(studyInfo)
 
     def fetchInstances(self, studyUID, seriesUID):
-        client = DICOMwebClient(url=self.dicomURL)
         if not os.path.exists('temp/'):
             os.makedirs('temp')
         
         with BusyCursor.BusyCursor():
-            instances = client.search_for_instances(study_instance_uid=studyUID, series_instance_uid=seriesUID)
+            instances = self.dicomClient.search_for_instances(study_instance_uid=studyUID, series_instance_uid=seriesUID)
             for instanceIndex, instance in enumerate(instances):
                 instanceUID = instance['00080018']['Value'][0]
-                retrievedInstance = client.retrieve_instance(
+                retrievedInstance = self.dicomClient.retrieve_instance(
                     study_instance_uid=studyUID,
                     series_instance_uid=seriesUID,
                     sop_instance_uid=instanceUID)
