@@ -27,6 +27,30 @@
       <item row="1" column="1">
        <widget class="QLineEdit" name="FhirServerLineEdit"/>
       </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="DICOMLineEdit"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string>DICOMweb Server</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_6">
+        <property name="text">
+         <string>DICOMweb Status</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLabel" name="DICOMStatusLabel">
+        <property name="text">
+         <string>Not Connected</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -39,7 +63,7 @@
       <string>Run the algorithm.</string>
      </property>
      <property name="text">
-      <string>Load Patients</string>
+      <string>Connect and Load Patients</string>
      </property>
     </widget>
    </item>
@@ -66,12 +90,18 @@
    <item>
     <widget class="QLabel" name="label_4">
      <property name="text">
-      <string>Image Browser</string>
+      <string>DICOM Browser</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QListWidget" name="ImageListWidget"/>
+    <widget class="QTreeWidget" name="DICOMTreeWidget">
+     <column>
+      <property name="text">
+       <string notr="true">1</string>
+      </property>
+     </column>
+    </widget>
    </item>
    <item>
     <spacer name="verticalSpacer">

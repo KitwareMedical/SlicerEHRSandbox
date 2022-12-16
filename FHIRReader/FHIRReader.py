@@ -10,6 +10,9 @@ from slicer.util import VTKObservationMixin
 
 from Utils import BusyCursor
 from Utils import DependencyInstaller
+from dicomweb_client.api import DICOMwebClient
+import pydicom
+from DICOMLib import DICOMUtils
 
 allowLoading = True
 
@@ -129,6 +132,8 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = False
         self.patient_table_node = None
         self.observations_table_node = None
+        self.loaded_id = None
+        self.loaded_dicom = {}
 
     def setup(self):
         """
@@ -176,8 +181,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
         # (in the selected parameter node).
         self.ui.FhirServerLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
+        self.ui.DICOMLineEdit.connect("valueChanged(str)", self.updateParameterNodeFromGUI)
         self.ui.PatientListWidget.itemDoubleClicked.connect(self.onPatientListWidgetDoubleClicked)
         self.ui.ObservationListWidget.itemDoubleClicked.connect(self.onObservationListWidgetDoubleClicked)
+        self.ui.DICOMTreeWidget.itemDoubleClicked.connect(self.onDICOMTreeWidgetDoubleClicked)
 
         # Buttons
         self.ui.loadPatientsButton.connect('clicked(bool)', self.onLoadPatientsButton)
@@ -198,6 +205,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+
 
         for i in range(layoutManager.tableViewCount):
             tableWidget = layoutManager.tableWidget(i)
@@ -327,20 +335,36 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self._parameterNode.EndModify(wasModified)
 
+    def clearUI(self):
+        self.ui.PatientListWidget.clear()
+        self.ui.ObservationListWidget.clear()
+        self.ui.DICOMTreeWidget.clear()
+        self.observation_table_node.RemoveAllColumns()
+        self.patient_table_node.RemoveAllColumns()
+        if (self.loaded_id is not None):
+            shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+            toRemove = shNode.GetItemByUID(slicer.vtkMRMLSubjectHierarchyConstants.GetDICOMUIDName(), self.loaded_id)
+            shNode.RemoveItem(toRemove)
+
     def onLoadPatientsButton(self):
         """
         Run processing when user clicks "Load Patients" button.
         """
         with BusyCursor.BusyCursor():
-            self.logic.process(self.ui.FhirServerLineEdit.text)
+            testResult = self.logic.testConnection(self.ui.FhirServerLineEdit.text, self.ui.DICOMLineEdit.text)
+            if (testResult):
+                self.ui.DICOMStatusLabel.text = 'Not Connected'
+                return
+            if (len(self.ui.DICOMLineEdit.text)):
+                self.ui.DICOMStatusLabel.text = 'Connected'
+            self.logic.fetchPatients()
             self.loadPatients()
 
     def loadPatients(self):
-        self.ui.PatientListWidget.clear()
-        self.ui.ObservationListWidget.clear()
+        self.clearUI()
         for idx, patient in enumerate(self.logic.patients):
             item = qt.QListWidgetItem()
-            item.setData(21, idx)
+            item.setData(21, (idx, patient.identifier[0].value if patient.identifier is not None else None))
             if (patient.name is not None):
                 item.setText('{0}, {1}'.format(patient.name[0].family, patient.name[0].given[0]))
             elif (patient.identifier is not None):
@@ -352,8 +376,11 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onPatientListWidgetDoubleClicked(self, item):
         with BusyCursor.BusyCursor():
             self.observation_table_node.RemoveAllColumns()
-            self.loadPatientInfo(item.data(21))
-            self.loadPatientObservations(item.data(21))
+            self.loadPatientInfo(item.data(21)[0])
+            self.loadPatientObservations(item.data(21)[0])
+            if (len(self.ui.DICOMLineEdit.text)):
+                self.loadPatientDICOMs(item.data(21)[1])
+                self.loaded_id = item.data(21)[1]
 
     def loadPatientObservations(self, idx):
         self.ui.ObservationListWidget.clear()
@@ -423,10 +450,48 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(patient.name[0].given[0])
         valueArray.InsertNextValue(patient.name[0].family)
         valueArray.InsertNextValue(patient.birthDate.date.strftime('%Y-%m-%d') if patient.birthDate is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].system if patient.identifier is not None else "")
-        valueArray.InsertNextValue(patient.identifier[0].value if patient.identifier is not None else "")
+        valueArray.InsertNextValue(str(patient.identifier[0].system) if patient.identifier is not None else "")
+        valueArray.InsertNextValue(str(patient.identifier[0].value) if patient.identifier is not None else "")
 
         self.patient_table_node.AddColumn(valueArray)
+
+    def loadPatientDICOMs(self, patientID):
+        self.ui.DICOMTreeWidget.clear()
+        if (self.loaded_id is not None and self.loaded_id != patientID):
+            shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+            toRemove = shNode.GetItemByUID(slicer.vtkMRMLSubjectHierarchyConstants.GetDICOMUIDName(), self.loaded_id)
+            shNode.RemoveItem(toRemove)
+            self.loaded_dicom = {}
+
+        self.logic.fetchStudiesAndSeries(patientID)
+        for study in self.logic.selectedDICOM:
+            studyItem = qt.QTreeWidgetItem()
+            studyItem.setText(0, study['displayName'])
+            for serie in study['series']:
+                serieItem = qt.QTreeWidgetItem()
+                serieItem.setText(0, serie['displayName'])
+                serieItem.setData(0, 21, (study['id'], serie['id']))
+                studyItem.addChild(serieItem)
+            self.ui.DICOMTreeWidget.insertTopLevelItem(0, studyItem)
+
+    def onDICOMTreeWidgetDoubleClicked(self, item, col):
+        if (item.data(col, 21) is None):
+            return
+        studyUID, serieUID = item.data(col, 21)
+        if (studyUID, serieUID) in self.loaded_dicom:
+            node = slicer.util.getNode(self.loaded_dicom[(studyUID, serieUID)])
+            slicer.util.setSliceViewerLayers(background = node)
+        else:
+            self.logic.fetchInstances(studyUID, serieUID)
+            with DICOMUtils.TemporaryDICOMDatabase() as db:
+                DICOMUtils.importDicom(os.getcwd()+'/temp', db)
+                nodeID = DICOMUtils.loadSeriesByUID([serieUID])[0]
+                self.loaded_dicom[(studyUID, serieUID)] = nodeID
+
+            for f in os.listdir(os.getcwd()+'/temp'):
+                os.remove(os.path.join(os.getcwd()+'/temp', f))
+            os.rmdir(os.getcwd()+'/temp')
+
         
 #
 # FHIRReaderLogic
@@ -450,42 +515,66 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
         self.patients = []
         self.selectedObservations = {}
         self.fhirURL = ""
+        self.dicomURL = ""
+        self.selectedDICOM = []
 
         self.patient_table_view = None
-        self.observations_table_view = None     
+        self.observations_table_view = None 
+
+        self.fhirClient = None
+        self.dicomClient = None    
 
     def setDefaultParameters(self, parameterNode):
         """
         Initialize parameter node with default settings.
         """
 
-    def process(self, fhirUrl):
+    def testConnection(self, fhirUrl, dicomUrl):
+        fhirError = False
+        dicomError = False
+
+        if (len(fhirUrl) == 0):
+            slicer.util.errorDisplay('Error intializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
+        else:
+            self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
+            settings = {
+                'app_id': 'my_web_app',
+                'api_base': self.fhirURL + "fhir/"
+            }
+            try:
+                self.smart = client.FHIRClient(settings=settings)
+            except BaseException as e:
+                fhirError = True
+                slicer.util.errorDisplay('Error intializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
+
+            if (not fhirError):
+                try:
+                    self.smart.server.request_json('Patient')
+                except BaseException as e:
+                    fhirError = True
+                    slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
+
+        if (len(dicomUrl)):
+            self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
+                    
+            try:
+                self.dicomClient = DICOMwebClient(url=self.dicomURL)
+                self.dicomClient.search_for_studies()
+            except BaseException as e: 
+                dicomError = True
+                slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Does te server exist at {0} ?'.format(self.dicomURL), windowTitle='Error')
+                
+
+        return dicomError or fhirError
+                
+
+
+    def fetchPatients(self):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
         :param fhirUrl: fhir server to connect to
-        """            
-        if (len(fhirUrl) == 0):
-            slicer.util.errorDisplay('Error initializing FHIR Client. Is FHIR Server empty?', windowTitle='Error')
-            return
-
-        self.fhirURL = fhirUrl if (fhirUrl[-1] == '/') else fhirUrl + '/'
-        settings = {
-            'app_id': 'my_web_app',
-            'api_base': self.fhirURL + "fhir/"
-        }
-        try:
-            self.smart = client.FHIRClient(settings=settings)
-        except BaseException as e:
-            slicer.util.errorDisplay('Error initializing FHIR Client. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
-            return
-
-        try:
-            self.smart.server.request_json('Patient')
-        except BaseException as e:
-            slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
-            return
-        
+        """        
         search = p.Patient.where(struct={'_count': '200'})
         self.patients = self.performSearch(search) #search.perform_resources(self.smart.server)        
 
@@ -525,6 +614,64 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
             if (observationType not in self.selectedObservations):
                 self.selectedObservations[observationType] = []
             self.selectedObservations[observationType].append(observation)       
+
+    def fetchStudiesAndSeries(self, patientID):     
+        self.selectedDICOM = []
+        if (patientID is None):
+            return
+        with BusyCursor.BusyCursor():
+            offset = 0
+            studies = []
+            while True:
+                subset = self.dicomClient.search_for_studies(search_filters={'PatientID': patientID}, offset=offset)
+                if len(subset) == 0:
+                    break
+                if subset[0] in studies:
+                    # got the same study twice, so probably this server does not respect offset,
+                    # therefore we cannot do paging
+                    break
+                studies.extend(subset)
+                offset += len(subset)
+            for i, study in enumerate(studies):
+                studyDS = pydicom.dataset.Dataset.from_json(study)
+                studyInfo = {}
+                studyInfo['displayName'] = studyDS.StudyDescription if hasattr(studyDS, 'SeriesDescription') and studyDS.StudyDescription != "" else "Study {0}".format(i)
+                studyInfo['id'] = studyDS.StudyInstanceUID
+                series = []
+                offset = 0
+                while True:
+                    subset = self.dicomClient.search_for_series(studyDS.StudyInstanceUID, offset=offset)
+                    if len(subset) == 0:
+                        break
+                    if subset[0] in series:
+                        # got the same study twice, so probably this server does not respect offset,
+                        # therefore we cannot do paging
+                        break
+                    series.extend(subset)
+                    offset += len(subset)
+                seriesInfo = []
+                for j, serie in enumerate(series):
+                    serieDS = pydicom.dataset.Dataset.from_json(serie)
+                    serieInfo = {}
+                    serieInfo['displayName'] = serieDS.SeriesDescription if hasattr(serieDS, 'SeriesDescription') and serieDS.SeriesDescription != "" else "Series {0}".format(j)
+                    serieInfo['id'] = serieDS.SeriesInstanceUID
+                    seriesInfo.append(serieInfo)
+                studyInfo['series'] = seriesInfo
+                self.selectedDICOM.append(studyInfo)
+
+    def fetchInstances(self, studyUID, seriesUID):
+        if not os.path.exists('temp/'):
+            os.makedirs('temp')
+        
+        with BusyCursor.BusyCursor():
+            instances = self.dicomClient.search_for_instances(study_instance_uid=studyUID, series_instance_uid=seriesUID)
+            for instanceIndex, instance in enumerate(instances):
+                instanceUID = instance['00080018']['Value'][0]
+                retrievedInstance = self.dicomClient.retrieve_instance(
+                    study_instance_uid=studyUID,
+                    series_instance_uid=seriesUID,
+                    sop_instance_uid=instanceUID)
+                pydicom.filewriter.write_file('temp/file_'+str(instanceIndex)+'.dcm', retrievedInstance)        
 
 
 #
