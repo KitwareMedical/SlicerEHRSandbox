@@ -335,6 +335,17 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self._parameterNode.EndModify(wasModified)
 
+    def clearUI(self):
+        self.ui.PatientListWidget.clear()
+        self.ui.ObservationListWidget.clear()
+        self.ui.DICOMTreeWidget.clear()
+        self.observation_table_node.RemoveAllColumns()
+        self.patient_table_node.RemoveAllColumns()
+        if (self.loaded_id is not None):
+            shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+            toRemove = shNode.GetItemByUID(slicer.vtkMRMLSubjectHierarchyConstants.GetDICOMUIDName(), self.loaded_id)
+            shNode.RemoveItem(toRemove)
+
     def onLoadPatientsButton(self):
         """
         Run processing when user clicks "Load Patients" button.
@@ -342,14 +353,15 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         with BusyCursor.BusyCursor():
             testResult = self.logic.testConnection(self.ui.FhirServerLineEdit.text, self.ui.DICOMLineEdit.text)
             if (testResult):
+                self.ui.DICOMStatusLabel.text = 'Not Connected'
                 return
+            if (len(self.ui.DICOMLineEdit.text)):
+                self.ui.DICOMStatusLabel.text = 'Connected'
             self.logic.fetchPatients()
             self.loadPatients()
 
     def loadPatients(self):
-        self.ui.PatientListWidget.clear()
-        self.ui.ObservationListWidget.clear()
-        self.ui.DICOMTreeWidget.clear()
+        self.clearUI()
         for idx, patient in enumerate(self.logic.patients):
             item = qt.QListWidgetItem()
             item.setData(21, (idx, patient.identifier[0].value if patient.identifier is not None else None))
@@ -366,8 +378,9 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.observation_table_node.RemoveAllColumns()
             self.loadPatientInfo(item.data(21)[0])
             self.loadPatientObservations(item.data(21)[0])
-            self.loadPatientDICOMs(item.data(21)[1])
-            self.loaded_id = item.data(21)[1]
+            if (len(self.ui.DICOMLineEdit.text)):
+                self.loadPatientDICOMs(item.data(21)[1])
+                self.loaded_id = item.data(21)[1]
 
     def loadPatientObservations(self, idx):
         self.ui.ObservationListWidget.clear()
@@ -542,14 +555,16 @@ class FHIRReaderLogic(ScriptedLoadableModuleLogic):
                     fhirError = True
                     slicer.util.errorDisplay('Error connecting to FHIR Server. Does the server exist at {0} ?'.format(self.fhirURL), windowTitle='Error')
 
-        if (len(dicomUrl) != 0):
+        if (len(dicomUrl)):
             self.dicomURL = dicomUrl[:-1] if (dicomUrl[-1] == '/') else dicomUrl
-        
+                    
             try:
                 self.dicomClient = DICOMwebClient(url=self.dicomURL)
+                self.dicomClient.search_for_studies()
             except BaseException as e: 
-                slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Does te server exist at {0} ?'.format(self.dicomURL), windowTitle='Error')
                 dicomError = True
+                slicer.util.errorDisplay('Error occured while communicating with DICOM Server. Does te server exist at {0} ?'.format(self.dicomURL), windowTitle='Error')
+                
 
         return dicomError or fhirError
                 
