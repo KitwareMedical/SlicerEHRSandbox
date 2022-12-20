@@ -42,6 +42,9 @@ Please note that the `Patient ID` value in Slicer's DICOM database needs to be t
 
 You can the continue from step 4 in the first set of DICOMweb server instructions.
 
+## Screenshots
+![SlicerEHRSandbox in use](Screenshots/in_use.png)
+
 
 ## License
 
