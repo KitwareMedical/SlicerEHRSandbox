@@ -205,6 +205,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         layoutManager = slicer.app.layoutManager()
         layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(layoutID, layout_text)
+        self.oldLayout = layoutManager.layout
+
+        # set the layout to be the current one
+        layoutManager.setLayout(5001)
 
 
         for i in range(layoutManager.tableViewCount):
@@ -213,9 +217,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             tableController.pinButton().hide()
             
             if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                tableWidget.tableView().setMRMLTableNode(self.patient_table_node)
+                layoutManager.tableWidget(i).tableView().mrmlTableViewNode().SetTableNodeID(self.patient_table_node.GetID())
+                print(layoutManager.tableWidget(1).tableView().mrmlTableViewNode().GetTableNodeID())
             elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                tableWidget.tableView().setMRMLTableNode(self.observation_table_node)
+                layoutManager.tableWidget(i).tableView().mrmlTableViewNode().SetTableNodeID(self.observation_table_node.GetID())
 
     def cleanup(self):
         """
@@ -232,18 +237,11 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
 
         layoutManager = slicer.app.layoutManager()
-        self.oldLayout = layoutManager.layout
+        if(layoutManager.layout != 5001):
+            self.oldLayout = layoutManager.layout
 
         # set the layout to be the current one
         layoutManager.setLayout(5001)
-
-        for i in range(layoutManager.tableViewCount):
-            tableWidget = layoutManager.tableWidget(i)
-            
-            if tableWidget.name == 'qMRMLTableWidgetPatientInformation':
-                tableWidget.tableView().setMRMLTableNode(self.patient_table_node)
-            elif tableWidget.name == 'qMRMLTableWidgetPatientObservations':
-                tableWidget.tableView().setMRMLTableNode(self.observation_table_node)
 
         
 
@@ -394,6 +392,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onObservationListWidgetDoubleClicked(self, item):
         observationType = item.data(21)
+        self.observation_table_node.SetLocked(False)
         self.observation_table_node.RemoveAllColumns()        
 
         column_names = ['id', 'Value', 'Unit', 'Observation Type', 'Date','UCUM Code', 'Code Value',
@@ -428,9 +427,10 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             self.observation_table_node.AddColumn(columnArray)
 
-        # observation_table_node.SetLocked(True);
+        observation_table_node.SetLocked(True);
 
     def loadPatientInfo(self, idx):
+        self.patient_table_node.SetLocked(False)
         self.patient_table_node.RemoveAllColumns()
 
         column_names = ['id', 'Gender', 'First Name', 'Last Name', 'Date of Birth', 'Identifier System', 'Identifier Value']
@@ -454,6 +454,7 @@ class FHIRReaderWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         valueArray.InsertNextValue(str(patient.identifier[0].value) if patient.identifier is not None else "")
 
         self.patient_table_node.AddColumn(valueArray)
+        self.patient_table_node.SetLocked(True)
 
     def loadPatientDICOMs(self, patientID):
         self.ui.DICOMTreeWidget.clear()
