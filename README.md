@@ -2,23 +2,48 @@
 
 *UNDER DEVELOPMENT*
 
-Slicer extension for reading EHR data from a FHIR server. 
+Slicer extension for reading EHR data from a FHIR server and DICOM data from a DICOMweb server. 
 
-## How To Use
+## Tutorial
 
-After the extension has been installed, swap to the FHIRReader module. The left side of the screen will have a FHIR url textbox with three selection menus below. The right side of the screen will have two empty tables for displaying patient information and observation information.
+0. `SlicerEHRSandbox` requires a FHIR server and a DICOMweb server. If you are missing either, go to the [FHIR Server](#fhirserver) section for a missing FHIR server and the [DICOMweb Server](#dicomwebserver) section for a missing DICOMweb server.
+1. Place the url of your FHIR server into the FHIR Server textbox and (if available) place the url of your DICOMweb server into the DICOMweb server textbox. It is important to note the url should end with `hapi-fhir-jpaserver`.
+2. Press the `Connect and Load Patients` button.
+3. The `Patient Browser` list will be populated with all patients in the FHIR server. Double click a patient to load observations and DICOM studies.
+4. The `Patient Information` table (left table) will populate with patient information from the FHIR server. The `Observation Browser` and `DICOM Browser` will populate with associated observation types and DICOM studies respectively.
+5. Double click an obervation type. The `Patient Observations` table (right table) will populate with all observations of the selected type.
+6. Double click a DICOM series. The `Patient DICOM` slice viewer will display the DICOM image after it is downloaded from the server. 
 
-Before attempting to connect to a server, first check to see if your Slicer has the [fhirclient](https://pypi.org/project/fhirclient/) python module installed. If you do not you not know if it installed or if it is not installed, there is an advanced tab at the bottom of the screen that contains a button to install the module for you.
-
-With fhirclient installed, type the url of the FHIR server to connect to into the FHIR url textbox. The URL should follow the format of `http://localhost:2400/hapi-fhir-jpaserver/`. It is important to note the url should end with `hapi-fhir-jpaserver`.
-
-The system will begin to load all patients from the server. Depending on the amount of patients, it can take a few seconds to load all patients. The first selection menu will have the patients as options. The display string for each patient item will vary depending on the information available. If there are names on the server, each patient will be displayed as `Last Name, First Name`. If there are no names available, each patient will be displayed as `Patient id`. If this value is not present on the server, then the patient will be displayed as `Patient number` where *number* will increment with each patient.
-
-Double clicking on a patient will display the information on the left table and load all observations associated with the patient. The observations will populate the second selection menu. The observations will be grouped by types found. Double clicking an observation type will populate the left table with all of the patient's observations of that type.
-
-## FHIR Server
+## <a name="fhirserver"></a>FHIR Server
 
 If you have data without a FHIR server, it is still possible to use the extension. Using [lungair-fhir-server](https://github.com/KitwareMedical/lungair-fhir-server), it is possible to create a Docker container containing a FHIR server. Consult the README on how to convert your data into a FHIR server. Once the FHIR server has been created, you can use SlicerEHRSandbox as normal.
+
+## <a name="dicomwebserver"></a>DICOMweb Server
+
+If you have DICOM data without a DICOMweb server, it is possible to create a DICOMweb server using Slicer using the following steps.
+
+1. Open another instance of Slicer.
+2. Go to the `Add DICOM Data` module.
+3. Press the `Import DICOM Data` button and select the directory with all DICOM files.
+4. Go to the `Web Server` module.
+5. Ensure the `DICOMweb API` box is checked in the `Advanced` tab.
+6. Press the `Start Server` button.
+7. Press the `Open static pages in external browser` button. This will give you url the web server is hosted at.
+8. Add `/dicom` to the end of the url for the DICOM endpoint. This will be the url to put in the DICOMweb server textbox.
+
+Please note that the `Patient ID` value in Slicer's DICOM database needs to be the same ID value in the first identifier value inside the the FHIR server. More information about identifier can be found [here](https://www.hl7.org/fhir/datatypes.html#Identifier). If the values do not match up:
+
+1. Load the affected patient's series into Slicer.
+2. Delete the same patients from the DICOM database.
+3. Right click each series and select `Export to DICOM...`.
+4. Change the `PatientID` value to match the value in FHIR.
+5. Press the `Export` button.
+6. Repeat for all series.
+
+You can the continue from step 4 in the first set of DICOMweb server instructions.
+
+## Screenshots
+![SlicerEHRSandbox in use](Screenshots/in_use.png)
 
 
 ## License
